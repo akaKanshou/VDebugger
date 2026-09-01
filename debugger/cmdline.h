@@ -1,0 +1,84 @@
+#ifndef CMDLINE_H
+#define CMDLINE_H
+
+#include "linenoise.h"
+#include <stdio.h>
+#include <stdlib.h>
+
+// The length limit set on commands passed to the debugger
+extern const int CMD_MAX_SIZE;
+
+typedef enum COMMAND {
+    CONTINUE,
+    STEP_OVER,
+    STEP_NEXT,
+    PAUSE,
+    EXIT,
+
+    NUM_CMDS,
+    INVALID,
+} COMMAND;
+
+// Minimal char buffer class
+typedef struct Buffer {
+    // Underlying buffer.
+    // Caller has the responsibility of allocation and deallocation.
+    char *data;
+
+    // size is the length of the buffer in characters.
+    // a value of 0 indicates allocation from linenoise and an unknown length.
+    int size;
+
+    // rseek is the read seek of the bufer.
+    int rseek;
+
+    // rseek is the write seek of the bufer.
+    int wseek;
+} Buffer;
+
+// newBuffer initializes a Buffer and returns a pointer to it.
+// if size > 0: malloc's a buffer of specified size to data.
+Buffer *newBuffer(int size);
+
+// peekBuffer reads the next character from buffer without advancing rseek.
+// If there is nothing to read, null character is returned.
+char peekBuffer(Buffer *buffer);
+
+// peekBuffer reads the last character from buffer without advancing rseek.
+// If there is nothing to read, null character is returned.
+char peekBufferBack(Buffer *buffer);
+
+// readFromBuffer reads the next character from buffer and advances rseek by 1.
+// If there is nothing to read, null character is returned.
+char readFromBuffer(Buffer *buffer);
+
+// writeToBuffer writes to buffer.
+char writeToBuffer(Buffer *buffer, char c);
+
+// popBuffer reduces the wseek by 1, effectively popping the last element.
+// Returns the popped character.
+// Returns null character if buffer was empty.
+char popBuffer(Buffer *buffer);
+
+void resetSeek(Buffer *buffer);
+
+// pollInput takes input from user.
+// Returns 0 on EOF or OOM.
+char pollInput(Buffer *line);
+
+// parseInput parses the data in line by the character and stores in buffer.
+// Returns 1 if there a command ready to parsed. At this point buffer has a
+// command ready to read. Returns 0 if more input is needed.
+int parseInput(Buffer *buffer, Buffer *line);
+
+// matchCommand matches the command string stored in buffer with available
+// commands. If no command matches, returns the INVALID command.
+COMMAND matchCommand(char *buffer);
+
+int isWhitespace(char c);
+
+// nextToken advances buffer upto the next null character and returns the
+// address to that character.
+char *nextToken(Buffer *buffer);
+
+#endif
