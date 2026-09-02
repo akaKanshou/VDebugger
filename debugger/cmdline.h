@@ -2,6 +2,8 @@
 #define CMDLINE_H
 
 #include "linenoise.h"
+
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -12,12 +14,23 @@ typedef enum COMMAND {
     CONTINUE,
     STEP_OVER,
     STEP_NEXT,
+    BREAKPOINT,
     PAUSE,
     EXIT,
 
     NUM_CMDS,
     INVALID,
 } COMMAND;
+
+typedef enum BREAKPOINT_OPTIONS {
+    ENABLE_BREAKPOINT,
+    DISABLE_BREAKPOINT,
+
+    BREAKPOINT_ARG_MEMADDR,
+    BREAKPOINT_ARG_LINENUM,
+
+    INVALID_BREAKPOINT,
+} BREAKPOINT_OPTIONS;
 
 // Minimal char buffer class
 typedef struct Buffer {
@@ -60,6 +73,7 @@ char writeToBuffer(Buffer *buffer, char c);
 // Returns null character if buffer was empty.
 char popBuffer(Buffer *buffer);
 
+// Resets both rseek and wseek to 0
 void resetSeek(Buffer *buffer);
 
 // pollInput takes input from user.
@@ -68,17 +82,20 @@ char pollInput(Buffer *line);
 
 // parseInput parses the data in line by the character and stores in buffer.
 // Returns 1 if there a command ready to parsed. At this point buffer has a
-// command ready to read. Returns 0 if more input is needed.
+// command ready to read. Returns 0 if more input is needed. Returns -1 in case
+// of buffer overflow.
 int parseInput(Buffer *buffer, Buffer *line);
 
 // matchCommand matches the command string stored in buffer with available
 // commands. If no command matches, returns the INVALID command.
 COMMAND matchCommand(char *buffer);
 
-int isWhitespace(char c);
+bool isWhitespace(char c);
 
 // nextToken advances buffer upto the next null character and returns the
 // address to that character.
-char *nextToken(Buffer *buffer);
+char *nextToken(Buffer *buffer, char delim);
+
+BREAKPOINT_OPTIONS matchBreakpointOption(char *buffer);
 
 #endif

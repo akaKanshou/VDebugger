@@ -1,3 +1,6 @@
 [submodule "ext/linenoise"]
 	path = ext/linenoise
 	url = https://github.com/antirez/linenoise.git
+[submodule "ext/hashmap"]
+	path = ext/hashmap
+	url = https://github.com/tidwall/hashmap.c.git

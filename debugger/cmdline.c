@@ -112,23 +112,27 @@ COMMAND matchCommand(char *buffer) {
         return EXIT;
     }
 
+    if (!strcmp(buffer, "break")) {
+        return BREAKPOINT;
+    }
+
     return INVALID;
 }
 
-int isWhitespace(char c) {
+bool isWhitespace(char c) {
     switch (c) {
     case ' ':
     case '\t':
     case '\r':
     case '\n':
-        return 1;
+        return true;
     default:
-        return 0;
+        return false;
     }
 }
 
 char *nextToken(Buffer *buffer) {
-    if (!buffer) return NULL;
+    if (!buffer || !buffer->data[buffer->rseek]) return NULL;
     char *next = buffer->data + buffer->rseek;
     while (readFromBuffer(buffer) != '\0') {
         // skip characters
@@ -136,4 +140,28 @@ char *nextToken(Buffer *buffer) {
 
     if (next[0] == '\0') return NULL;
     return next;
+}
+
+BREAKPOINT_OPTIONS matchBreakpointOption(char *buffer) {
+    if (!buffer) {
+        return INVALID_BREAKPOINT;
+    }
+
+    if (!strcmp(buffer, "enable")) {
+        return ENABLE_BREAKPOINT;
+    }
+
+    if (!strcmp(buffer, "disable")) {
+        return DISABLE_BREAKPOINT;
+    }
+
+    if (!strcmp(buffer, "addr")) {
+        return BREAKPOINT_ARG_MEMADDR;
+    }
+
+    if (!strcmp(buffer, "line")) {
+        return BREAKPOINT_ARG_LINENUM;
+    }
+
+    return INVALID_BREAKPOINT;
 }

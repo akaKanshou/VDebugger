@@ -2,6 +2,7 @@
 #include <stdlib.h>
 
 #include <errno.h>
+#include <sys/personality.h>
 #include <sys/ptrace.h>
 #include <unistd.h>
 
@@ -25,6 +26,7 @@ int main(int argc, char *argv[]) {
         // child process
 
         ptrace(PT_TRACE_ME, NULL, NULL, NULL);
+        personality(ADDR_NO_RANDOMIZE);
         execl(program, program, NULL);
     }
 
