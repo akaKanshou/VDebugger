@@ -4,6 +4,7 @@
 #include <linux/limits.h>
 #include <sys/ptrace.h>
 #include <sys/types.h>
+#include <sys/user.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -54,7 +55,11 @@ int runDebugger(Debugger *dbg) {
                 break;
             }
 
-            handleCommand(dbg, cmnd, buffer);
+            if (!handleCommand(dbg, cmnd, buffer)) {
+                fprintf(stdout, "\nOK\n"); // cmdline
+            } else {
+                fprintf(stdout, "\n!x!\n"); // cmdline
+            }
             resetSeek(buffer);
         }
 
@@ -83,14 +88,14 @@ int handleCommand(Debugger *dbg, COMMAND cmnd, Buffer *buffer) {
         return debugContinue(dbg);
     case BREAKPOINT:
         return handleBreakpoint(dbg, buffer);
-    case PAUSE:
-        return 0;
+    case REG:
+        return handleRegister(dbg, buffer);
     default:
-        fprintf(stdout, "Unknown command");
+        fprintf(stdout, "Unknown command"); // cmdline
         return 0;
     }
 
-    fprintf(stderr, "Unreachable state in handleCommand");
+    fprintf(stderr, "Unreachable state in handleCommand"); // cmdline
     return -1;
 }
 
@@ -101,7 +106,8 @@ int handleCommand(Debugger *dbg, COMMAND cmnd, Buffer *buffer) {
 int handleBreakpoint(Debugger *dbg, Buffer *buffer) {
     BREAKPOINT_OPTIONS action = matchBreakpointOption(nextToken(buffer)),
                        mode = matchBreakpointOption(nextToken(buffer));
-    if (action == INVALID_BREAKPOINT || mode == INVALID_BREAKPOINT) return -1;
+    if (action == INVALID_BREAKPOINT_OPT || mode == INVALID_BREAKPOINT_OPT)
+        return -1;
 
     char *argToken = nextToken(buffer);
     if (!argToken) return -1;
@@ -177,6 +183,125 @@ uint64_t BreakpointHash(const void *item, uint64_t seed0, uint64_t seed1) {
     const Breakpoint *memA = item;
     return hashmap_murmur(&memA->memAddrOffset, sizeof(memA->memAddrOffset),
                           seed0, seed1);
+}
+
+// =======================================
+
+// =======================================
+// REGISTERS
+// =======================================
+
+// TODO: Refactor this function. Does too much.
+int handleRegister(Debugger *dbg, Buffer *buffer) {
+    REGISTER_OPTIONS action = matchRegisterOption(nextToken(buffer)),
+                     mode = matchRegisterOption(nextToken(buffer));
+
+    if (action == INVALID_REGISTER_OPT || mode == INVALID_REGISTER_OPT) {
+        return -1;
+    }
+
+    char *arg = nextToken(buffer);
+    int res;
+
+    regs_struct regs;
+    REGISTER reg;
+    if (res = getRegsStruct(dbg, &regs)) {
+        return res;
+    }
+
+    switch (action) {
+    case READ_REGISTER:
+        if (mode == REGISTER_ARG_ALL) {
+            if (arg) {
+                fprintf(stdout, "invalid arg %s\n", arg);
+                return -1;
+            }
+
+            printRegisters(&regs);
+            return 0;
+        }
+
+        if (!arg) return -1;
+
+        if (mode == REGISTER_ARG_ABBR) {
+            reg = abbrToReg(arg);
+        } else if (mode == REGISTER_ARG_DWARF) {
+            int dwarfn = strtol(arg, &arg, 16);
+            if (arg + 1 < buffer->data + buffer->rseek) {
+                return -1;
+            }
+            reg = DWARFNToReg(dwarfn);
+        }
+        if (reg == NO_SUCH_REGISTER) return -1;
+
+        fprintf(stdout, "value :%llx\n", *getRegister(&regs, reg)); // cmdline
+
+        return 0;
+    case WRITE_REGISTER:
+        if (!arg) return -1;
+
+        if (mode == REGISTER_ARG_ABBR) {
+            reg = abbrToReg(arg);
+        } else if (mode == REGISTER_ARG_DWARF) {
+            int dwarfn = strtol(arg, &arg, 10);
+            if (arg + 1 < buffer->data + buffer->rseek) {
+                return -1;
+            }
+            reg = DWARFNToReg(dwarfn);
+        }
+        if (reg == NO_SUCH_REGISTER) return -1;
+
+        arg = nextToken(buffer);
+        if (!arg) return -1;
+        WORD value = strtoll(arg, &arg, 10);
+        if (arg + 1 < buffer->data + buffer->rseek) {
+            return -1;
+        }
+
+        setRegValue(dbg, reg, value);
+
+        return 0;
+    }
+
+    return -1;
+}
+
+int getRegsStruct(Debugger *dbg, regs_struct *regs) {
+    ptrace(PTRACE_GETREGS, dbg->c_pid, NULL, regs);
+    return 0;
+}
+
+int setRegsStruct(Debugger *dbg, regs_struct *regs) {
+    ptrace(PTRACE_SETREGS, dbg->c_pid, NULL, regs);
+    return 0;
+}
+
+int getRegValue(Debugger *dbg, REGISTER reg, WORD *value) {
+    int res;
+
+    regs_struct regs;
+    if (res = getRegsStruct(dbg, &regs)) return res;
+
+    UWORD *regl = getRegister(&regs, reg);
+    if (!regl) return NO_SUCH_REGISTER;
+
+    *value = *regl;
+    return 0;
+}
+
+int setRegValue(Debugger *dbg, REGISTER reg, WORD value) {
+    int res;
+
+    regs_struct regs;
+    if (res = getRegsStruct(dbg, &regs)) return res;
+
+    UWORD *regl = getRegister(&regs, reg);
+    if (!regl) return NO_SUCH_REGISTER;
+
+    *regl = value;
+    if (res = setRegsStruct(dbg, &regs)) return res;
+
+    return 0;
 }
 
 // =======================================

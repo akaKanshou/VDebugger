@@ -7,6 +7,7 @@
 #include <unistd.h>
 
 #include "debugger.h"
+#include "registers.h"
 
 int main(int argc, char *argv[]) {
     if (argc < 2) {
@@ -31,8 +32,9 @@ int main(int argc, char *argv[]) {
     }
 
     // parent process
-    Debugger *dbg = newDebugger(pid);
+    loadDWARFMappings();
 
+    Debugger *dbg = newDebugger(pid);
     int err = runDebugger(dbg);
     if (err) {
         fprintf(stderr, "Encountered an error: %i", err);

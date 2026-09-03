@@ -12,10 +12,8 @@ extern const int CMD_MAX_SIZE;
 
 typedef enum COMMAND {
     CONTINUE,
-    STEP_OVER,
-    STEP_NEXT,
+    REG,
     BREAKPOINT,
-    PAUSE,
     EXIT,
 
     NUM_CMDS,
@@ -29,8 +27,19 @@ typedef enum BREAKPOINT_OPTIONS {
     BREAKPOINT_ARG_MEMADDR,
     BREAKPOINT_ARG_LINENUM,
 
-    INVALID_BREAKPOINT,
+    INVALID_BREAKPOINT_OPT,
 } BREAKPOINT_OPTIONS;
+
+typedef enum REGISTER_OPTIONS {
+    READ_REGISTER,
+    WRITE_REGISTER,
+
+    REGISTER_ARG_ABBR,
+    REGISTER_ARG_DWARF,
+    REGISTER_ARG_ALL,
+
+    INVALID_REGISTER_OPT,
+} REGISTER_OPTIONS;
 
 // Minimal char buffer class
 typedef struct Buffer {
@@ -93,9 +102,18 @@ COMMAND matchCommand(char *buffer);
 bool isWhitespace(char c);
 
 // nextToken advances buffer upto the next null character and returns the
-// address to that character.
-char *nextToken(Buffer *buffer, char delim);
+// address to that character. The buffer upto this token is cleared.
+// A token is only useable till the next call to nextToken.
+char *nextToken(Buffer *buffer);
 
+// matchBreakpointOption matches the command string stored in buffer with
+// available breakpoint command options. If no option matches, returns the
+// INVALID_BREAKPOINT_OPT command.
 BREAKPOINT_OPTIONS matchBreakpointOption(char *buffer);
+
+// matchRegisterOption matches the command string stored in buffer with
+// available register command options. If no option matches, returns the
+// INVALID_REGISTER_OPT command.
+REGISTER_OPTIONS matchRegisterOption(char *buffer);
 
 #endif

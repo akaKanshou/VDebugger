@@ -104,8 +104,8 @@ COMMAND matchCommand(char *buffer) {
         return CONTINUE;
     }
 
-    if (!strcmp(buffer, "pause")) {
-        return PAUSE;
+    if (!strcmp(buffer, "reg")) {
+        return REG;
     }
 
     if (!strcmp(buffer, "exit")) {
@@ -133,6 +133,7 @@ bool isWhitespace(char c) {
 
 char *nextToken(Buffer *buffer) {
     if (!buffer || !buffer->data[buffer->rseek]) return NULL;
+    if (buffer->size && buffer->rseek >= buffer->wseek) return NULL;
     char *next = buffer->data + buffer->rseek;
     while (readFromBuffer(buffer) != '\0') {
         // skip characters
@@ -144,7 +145,7 @@ char *nextToken(Buffer *buffer) {
 
 BREAKPOINT_OPTIONS matchBreakpointOption(char *buffer) {
     if (!buffer) {
-        return INVALID_BREAKPOINT;
+        return INVALID_BREAKPOINT_OPT;
     }
 
     if (!strcmp(buffer, "enable")) {
@@ -163,5 +164,31 @@ BREAKPOINT_OPTIONS matchBreakpointOption(char *buffer) {
         return BREAKPOINT_ARG_LINENUM;
     }
 
-    return INVALID_BREAKPOINT;
+    return INVALID_BREAKPOINT_OPT;
+}
+
+REGISTER_OPTIONS matchRegisterOption(char *buffer) {
+    if (!buffer) return INVALID_REGISTER_OPT;
+
+    if (!strcmp(buffer, "read")) {
+        return READ_REGISTER;
+    }
+
+    if (!strcmp(buffer, "write")) {
+        return WRITE_REGISTER;
+    }
+
+    if (!strcmp(buffer, "s")) {
+        return REGISTER_ARG_ABBR;
+    }
+
+    if (!strcmp(buffer, "d")) {
+        return REGISTER_ARG_DWARF;
+    }
+
+    if (!strcmp(buffer, "a")) {
+        return REGISTER_ARG_ALL;
+    }
+
+    return INVALID_REGISTER_OPT;
 }

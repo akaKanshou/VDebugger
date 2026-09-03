@@ -1,13 +1,14 @@
 #ifndef DEBUGGER_H
 #define DEBUGGER_h
 
-typedef long long int WORD;
-
 #include "cmdline.h"
 #include "hashmap.h"
+#include "registers.h"
 
 #include <stdbool.h>
 #include <stdlib.h>
+
+typedef int64_t WORD;
 
 typedef struct hashmap hashmap;
 
@@ -74,6 +75,38 @@ int BreakpointCmp(const void *a, const void *b, void *udata);
 
 // WORDHash computes the hash of given WORD;
 uint64_t BreakpointHash(const void *item, uint64_t seed0, uint64_t seed1);
+
+// =======================================
+
+// =======================================
+// REGISTERS
+// =======================================
+
+// handleBreakpoint handles a register command.
+// Returns 0 on success and < 0 on error.
+// Command syntax:
+// 1) reg read a
+// 2) reg read [s <register_abbreviation> | d <register_dwarf_number>]
+// 3) reg write [s <register_abbr> | d <register_dwarf_num>] <value_decimal>
+int handleRegister(Debugger *dbg, Buffer *buffer);
+
+// getRegsStruct populates the given regs_struct with the values of all
+// registers.
+// Returns 0 on success and < 0 on error.
+int getRegsStruct(Debugger *dbg, regs_struct *regs);
+
+// setRegsStruct sets the value of registers as to regs_struct.
+// Returns 0 on success, and < 0 on failure
+int setRegsStruct(Debugger *dbg, regs_struct *regs);
+
+// getRegsValue gets the value of the specific register reg and stores it in
+// value ptr.
+// Returns 0 on success and < 0 on error.
+int getRegValue(Debugger *dbg, REGISTER reg, WORD *value);
+
+// setRegsValue sets the value of the specific register reg to the given value.
+// Returns 0 on success and < 0 on error.
+int setRegValue(Debugger *dbg, REGISTER reg, WORD value);
 
 // =======================================
 
