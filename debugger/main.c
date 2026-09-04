@@ -40,6 +40,8 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "Encountered an error: %i", err);
         return 1;
     }
+    ptrace(PT_DETACH, dbg->c_pid, NULL);
+    freeDebugger(dbg);
 
     return 0;
 }

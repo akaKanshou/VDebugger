@@ -32,10 +32,16 @@ int runDebugger(Debugger *dbg);
 // the debugee. popen is called.
 WORD getLoadAddress(int c_pid);
 
+// Wrapper for waitpid.
+// TODO: Error handling.
+int wait_for_signal(Debugger *dbg, int *status, int options);
+
 // handleCommand calls the approriate handler for specified command.
+// Returns 0 on success, 1 if debugger should terminate and, < 0 on failure.
 int handleCommand(Debugger *dbg, COMMAND cmnd, Buffer *buffer);
 
 // debugContinue continues the paused debugee.
+// Returns 0 on success, 1 on debugee terminating and, < 0 on failure.
 int debugContinue(Debugger *dbg);
 
 // =======================================
@@ -107,6 +113,40 @@ int getRegValue(Debugger *dbg, REGISTER reg, WORD *value);
 // setRegsValue sets the value of the specific register reg to the given value.
 // Returns 0 on success and < 0 on error.
 int setRegValue(Debugger *dbg, REGISTER reg, WORD value);
+
+// =======================================
+
+// =======================================
+// Step
+// =======================================
+
+// singleStep steps over one instruction.
+// Returns 0 on success, < 0 on error.
+int single_step(Debugger *dbg);
+
+// step_over_breakpoint steps over the current breakpoint IF EXISTS.
+// Disables breakpoint -> Rewinds PC to breakpoint -> Steps over once -> Enables
+// breakpoint.
+// Returns 0 on success or if breakpoint doesn't exist, < 0 on error.
+int step_over_breakpoint(Debugger *dbg);
+
+// handle_step handles a step over command.
+// Returns 0 on success and < 0 on error.
+// Command syntax:
+// step <times>
+int handle_step(Debugger *dbg, Buffer *buffer);
+
+// =======================================
+
+// =======================================
+// Errors
+// =======================================
+
+// get_waitpid_err returns a human readable error string for waitpid errors
+const char *get_waitpid_err(int err);
+
+// get_ptrace_err returns a human readable error string for waitpid errors
+const char *get_ptrace_err(int err);
 
 // =======================================
 

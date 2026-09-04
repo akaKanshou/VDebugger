@@ -15,6 +15,7 @@ typedef enum COMMAND {
     REG,
     BREAKPOINT,
     EXIT,
+    STEP,
 
     NUM_CMDS,
     INVALID,

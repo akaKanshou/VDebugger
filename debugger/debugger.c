@@ -2,6 +2,7 @@
 #include "cmdline.h"
 
 #include <linux/limits.h>
+#include <sys/errno.h>
 #include <sys/ptrace.h>
 #include <sys/types.h>
 #include <sys/user.h>
@@ -10,6 +11,10 @@
 
 #include <stdio.h>
 #include <string.h>
+
+// TODO: Move all printing to seperate library
+// TODO: Error handling ptrace and waitpid calls.
+// TODO: Change all variables to snake_case
 
 Debugger *newDebugger(int c_pid) {
     Debugger *dbg = (Debugger *)malloc(sizeof(Debugger));
@@ -31,13 +36,23 @@ WORD getLoadAddress(int c_pid) {
     return strtoll(memOffsetHex, NULL, 16);
 }
 
+int wait_for_signal(Debugger *dbg, int *status, int options) {
+    errno = 0;
+    if (waitpid(dbg->c_pid, status, options) == -1) return errno;
+    return 0;
+}
+
 int runDebugger(Debugger *dbg) {
     if (dbg == NULL) {
         return -1;
     }
 
-    int status, options = 0;
-    waitpid(dbg->c_pid, &status, options);
+    int status, options = 0, err;
+    if (err = wait_for_signal(dbg, &status, options)) {
+        fprintf(stderr, "Error on wait_for_signal: %s\n",
+                get_waitpid_err(err)); // cmdline
+        return -1;
+    }
 
     int res;
     COMMAND cmnd;
@@ -55,10 +70,14 @@ int runDebugger(Debugger *dbg) {
                 break;
             }
 
-            if (!handleCommand(dbg, cmnd, buffer)) {
+            int res = handleCommand(dbg, cmnd, buffer);
+            if (!res) {
                 fprintf(stdout, "\nOK\n"); // cmdline
-            } else {
+            } else if (res < 0) {
                 fprintf(stdout, "\n!x!\n"); // cmdline
+            } else {
+                fprintf(stdout, "Debugee terminated\n"); // cndline
+                return 0;
             }
             resetSeek(buffer);
         }
@@ -74,10 +93,20 @@ int runDebugger(Debugger *dbg) {
 }
 
 int debugContinue(Debugger *dbg) {
+    step_over_breakpoint(dbg);
+
     ptrace(PTRACE_CONT, dbg->c_pid, NULL, NULL);
 
-    int status, options = 0;
-    waitpid(dbg->c_pid, &status, options);
+    int status, options = 0, err;
+    if (err = wait_for_signal(dbg, &status, options)) {
+        fprintf(stderr, "Error on wait_for_signal: %s\n",
+                get_waitpid_err(err)); // cmdline
+        return -1;
+    }
+
+    if (WIFEXITED(status) || WIFSIGNALED(status)) {
+        return 1;
+    }
 
     return 0;
 }
@@ -90,6 +119,8 @@ int handleCommand(Debugger *dbg, COMMAND cmnd, Buffer *buffer) {
         return handleBreakpoint(dbg, buffer);
     case REG:
         return handleRegister(dbg, buffer);
+    case STEP:
+        return handle_step(dbg, buffer);
     default:
         fprintf(stdout, "Unknown command"); // cmdline
         return 0;
@@ -124,6 +155,7 @@ int handleBreakpoint(Debugger *dbg, Buffer *buffer) {
     default:
         return -2;
     }
+    arg += dbg->loadAddress;
 
     switch (action) {
     case ENABLE_BREAKPOINT:
@@ -135,15 +167,13 @@ int handleBreakpoint(Debugger *dbg, Buffer *buffer) {
     return -1;
 }
 
-Breakpoint makeBreakpoint(WORD memAddrOffset) {
+Breakpoint makeBreakpoint(WORD memAddr) {
     Breakpoint breakpoint = {
-        .memAddrOffset = memAddrOffset, .savedData = 0, .enabled = false};
+        .memAddrOffset = memAddr, .savedData = 0, .enabled = false};
     return breakpoint;
 }
 
 int enableBreakpoint(Debugger *dbg, WORD memAddr) {
-    memAddr += dbg->loadAddress;
-
     Breakpoint breakpoint = makeBreakpoint(memAddr);
     const Breakpoint *previous = hashmap_get(dbg->breakpoints, &breakpoint);
     if (previous && previous->enabled == true) return 1;
@@ -160,8 +190,6 @@ int enableBreakpoint(Debugger *dbg, WORD memAddr) {
 }
 
 int disableBreakpoint(Debugger *dbg, WORD memAddr) {
-    memAddr += dbg->loadAddress;
-
     Breakpoint breakpoint = makeBreakpoint(memAddr);
     const Breakpoint *previous = hashmap_get(dbg->breakpoints, &breakpoint);
     if (!previous || previous->enabled == false) return 1;
@@ -302,6 +330,119 @@ int setRegValue(Debugger *dbg, REGISTER reg, WORD value) {
     if (res = setRegsStruct(dbg, &regs)) return res;
 
     return 0;
+}
+
+// =======================================
+
+// =======================================
+// STEP
+// =======================================
+
+int single_step(Debugger *dbg) {
+    errno = 0;
+    if (ptrace(PTRACE_SINGLESTEP, dbg->c_pid, NULL, NULL) == -1) {
+        fprintf(stderr, "Error Single-Stepping: %s\n", get_ptrace_err(errno));
+        return errno;
+    }
+    return 0;
+}
+
+int step_over_breakpoint(Debugger *dbg) {
+    regs_struct regs;
+    getRegsStruct(dbg, &regs);
+
+    UWORD *program_counter = getRegister(&regs, rip);
+    *program_counter = *program_counter - 1;
+
+    Breakpoint key = makeBreakpoint(*program_counter);
+    const Breakpoint *breakpoint = hashmap_get(dbg->breakpoints, &key);
+    if (!breakpoint || !breakpoint->enabled) {
+        // No breakpoint to step over, or is not enabled.
+        return 0;
+    }
+
+    disableBreakpoint(dbg, breakpoint->memAddrOffset); // Disable
+    setRegsStruct(dbg, &regs);                         // Rewind program counter
+    int res = single_step(dbg);                        // Single step
+    if (res) {
+        return -1;
+    }
+
+    int status, options = 0;
+    if (res = wait_for_signal(dbg, &status, options)) {
+        fprintf(stderr, "Error on wait_for_signal: %s\n",
+                get_waitpid_err(res)); // cmdline
+        return -1;
+    }
+
+    enableBreakpoint(dbg, breakpoint->memAddrOffset); // Enable breakpoint
+    return 0;
+}
+
+int handle_step(Debugger *dbg, Buffer *buffer) {
+    char *arg = nextToken(buffer);
+    if (!arg) return -1;
+
+    WORD times = strtoll(arg, &arg, 10);
+    if (arg + 1 < buffer->data + buffer->rseek) return -1;
+
+    int res = 0;
+    while (times--) {
+        if (res = single_step(dbg)) {
+            break;
+        }
+
+        int status, option = 0;
+        if (res = wait_for_signal(dbg, &status, option)) {
+            fprintf(stderr, "Error on wait_for_signal: %s\n",
+                    get_waitpid_err(res)); // cmdline
+            break;
+        }
+    }
+    if (res) return -1;
+    return 0;
+}
+
+// =======================================
+
+// =======================================
+// Errors
+// =======================================
+
+const char *get_waitpid_err(int err) {
+    switch (err) {
+    case EAGAIN:
+        return "EAGAIN";
+    case ECHILD:
+        return "ECHILD";
+    case EINVAL:
+        return "EINVAL";
+    case EINTR:
+        return "EINTR";
+    case ESRCH:
+        return "ESRCH";
+    default:
+        return "Unknown err";
+    }
+}
+
+const char *get_ptrace_err(int err) {
+    switch (err) {
+    case EBUSY:
+        return "EBUSY";
+    case EFAULT:
+        return "EFAULT";
+    case EINVAL:
+        return "EINVAL";
+    case EIO:
+        return "EIO";
+    case EPERM:
+        return "EPERM";
+    case ESRCH:
+        return "ESRCH";
+    default:
+        return "Unknown err";
+    }
 }
 
 // =======================================

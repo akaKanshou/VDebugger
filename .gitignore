@@ -1,3 +1,5 @@
 output/
 build/
 *dump
+notes
+*.out

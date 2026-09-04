@@ -116,6 +116,10 @@ COMMAND matchCommand(char *buffer) {
         return BREAKPOINT;
     }
 
+    if (!strcmp(buffer, "step")) {
+        return STEP;
+    }
+
     return INVALID;
 }
 
