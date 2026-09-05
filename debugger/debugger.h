@@ -14,73 +14,73 @@ typedef struct hashmap hashmap;
 
 typedef struct Debugger {
     int c_pid;
-    WORD loadAddress;
+    WORD load_address;
     hashmap *breakpoints;
 } Debugger;
 
-// newDebugger returns a pointer to a Debugger initialized with the process id
+// new_debugger returns a pointer to a Debugger initialized with the process id
 // of the specified child process.
-Debugger *newDebugger(int c_pid);
+Debugger *new_debugger(int c_pid);
 
-// freeDebugger frees the Debugger struct.
-void freeDebugger(Debugger *dbg);
+// free_debugger frees the Debugger struct.
+void free_debugger(Debugger *dbg);
 
-// runDebugger waits for the debugee to start and initializes the REPL loop.
-int runDebugger(Debugger *dbg);
+// run_debugger waits for the debugee to start and initializes the REPL loop.
+int run_debugger(Debugger *dbg);
 
-// getLoadAddress queries /proc/<c_pid>/maps for the memory address offset of
+// get_load_address queries /proc/<c_pid>/maps for the memory address offset of
 // the debugee. popen is called.
-WORD getLoadAddress(int c_pid);
+WORD get_load_address(int c_pid);
 
 // Wrapper for waitpid.
 // TODO: Error handling.
 int wait_for_signal(Debugger *dbg, int *status, int options);
 
-// handleCommand calls the approriate handler for specified command.
+// handle_command calls the approriate handler for specified command.
 // Returns 0 on success, 1 if debugger should terminate and, < 0 on failure.
-int handleCommand(Debugger *dbg, COMMAND cmnd, Buffer *buffer);
+int handle_command(Debugger *dbg, COMMAND cmnd, Buffer *buffer);
 
-// debugContinue continues the paused debugee.
+// debug_continue continues the paused debugee.
 // Returns 0 on success, 1 on debugee terminating and, < 0 on failure.
-int debugContinue(Debugger *dbg);
+int debug_continue(Debugger *dbg);
 
 // =======================================
 // BREAKPOINT
 // =======================================
 
 typedef struct Breakpoint {
-    WORD memAddrOffset;
-    WORD savedData;
+    WORD mem_addr;
+    WORD saved_data;
     bool enabled;
     const char *setKey;
 } Breakpoint;
 
-// makeBreakpoint returns a breakpoint struct initialized with the
+// make_breakpoint returns a breakpoint struct initialized with the
 // specified memory address offset.
-Breakpoint makeBreakpoint(WORD memAddrOffset);
+Breakpoint make_breakpoint(WORD memAddrOffset);
 
-// handleBreakpoint handles a breakpoint command.
+// handle_breakpoint handles a breakpoint command.
 // Returns 0 on success and < 0 on error.
 // Command syntax:
 // break [enable | disable] [addr | line] <offset>
-int handleBreakpoint(Debugger *dbg, Buffer *buffer);
+int handle_breakpoint(Debugger *dbg, Buffer *buffer);
 
-// enableBreakpoint enables the breakpoint at the specified memory address
+// enable_breakpoint enables the breakpoint at the specified memory address
 // If no such breakpoint exists, it is created.
 // Returns 0 if breakpoint is successfully enabled; returns 1 if breakpoint was
 // already enabled.
-int enableBreakpoint(Debugger *dbg, WORD memAddr);
+int enable_breakpoint(Debugger *dbg, WORD mem_addr);
 
-// disablesBreakpoint disables the breakpoint at the specified memory address.
+// disable_breakpoint disables the breakpoint at the specified memory address.
 // Returns 0 if breakpoint is successfully disabled; returns 1 if breakpoint was
 // already disabled or didnt exist.
-int disableBreakpoint(Debugger *dbg, WORD memAddr);
+int disable_breakpoint(Debugger *dbg, WORD mem_addr);
 
 // WORDCmp returns the equivalence of two WORDS.
-int BreakpointCmp(const void *a, const void *b, void *udata);
+int breakpoint_cmp(const void *a, const void *b, void *udata);
 
 // WORDHash computes the hash of given WORD;
-uint64_t BreakpointHash(const void *item, uint64_t seed0, uint64_t seed1);
+uint64_t breakpoint_hash(const void *item, uint64_t seed0, uint64_t seed1);
 
 // =======================================
 
@@ -88,31 +88,31 @@ uint64_t BreakpointHash(const void *item, uint64_t seed0, uint64_t seed1);
 // REGISTERS
 // =======================================
 
-// handleBreakpoint handles a register command.
+// handle_register handles a register command.
 // Returns 0 on success and < 0 on error.
 // Command syntax:
 // 1) reg read a
 // 2) reg read [s <register_abbreviation> | d <register_dwarf_number>]
 // 3) reg write [s <register_abbr> | d <register_dwarf_num>] <value_decimal>
-int handleRegister(Debugger *dbg, Buffer *buffer);
+int handle_register(Debugger *dbg, Buffer *buffer);
 
-// getRegsStruct populates the given regs_struct with the values of all
+// get_regs_struct populates the given regs_struct with the values of all
 // registers.
 // Returns 0 on success and < 0 on error.
-int getRegsStruct(Debugger *dbg, regs_struct *regs);
+int get_regs_struct(Debugger *dbg, regs_struct *regs);
 
-// setRegsStruct sets the value of registers as to regs_struct.
+// set_regs_struct sets the value of registers as to regs_struct.
 // Returns 0 on success, and < 0 on failure
-int setRegsStruct(Debugger *dbg, regs_struct *regs);
+int set_regs_struct(Debugger *dbg, regs_struct *regs);
 
-// getRegsValue gets the value of the specific register reg and stores it in
+// get_reg_value gets the value of the specific register reg and stores it in
 // value ptr.
 // Returns 0 on success and < 0 on error.
-int getRegValue(Debugger *dbg, REGISTER reg, WORD *value);
+int get_reg_value(Debugger *dbg, REGISTER reg, WORD *value);
 
-// setRegsValue sets the value of the specific register reg to the given value.
+// set_reg_value sets the value of the specific register reg to the given value.
 // Returns 0 on success and < 0 on error.
-int setRegValue(Debugger *dbg, REGISTER reg, WORD value);
+int set_reg_value(Debugger *dbg, REGISTER reg, WORD value);
 
 // =======================================
 
@@ -120,7 +120,7 @@ int setRegValue(Debugger *dbg, REGISTER reg, WORD value);
 // Step
 // =======================================
 
-// singleStep steps over one instruction.
+// single_step steps over one instruction.
 // Returns 0 on success, < 0 on error.
 int single_step(Debugger *dbg);
 

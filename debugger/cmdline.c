@@ -3,7 +3,7 @@
 
 const int CMD_MAX_SIZE = 1024;
 
-Buffer *newBuffer(int size) {
+Buffer *new_buffer(int size) {
     Buffer *buffer = (Buffer *)malloc(sizeof(Buffer));
     if (!buffer) return NULL;
 
@@ -18,17 +18,17 @@ Buffer *newBuffer(int size) {
     return buffer;
 }
 
-char peekBuffer(Buffer *buffer) {
+char peek_buffer(Buffer *buffer) {
     if (buffer->rseek >= buffer->size) return '\0';
     return buffer->data[buffer->rseek];
 }
 
-char peekBufferBack(Buffer *buffer) {
+char peek_buffer_back(Buffer *buffer) {
     if ((buffer->size == 0) || (buffer->wseek == 0)) return '\0';
     return buffer->data[buffer->wseek - 1];
 }
 
-char readFromBuffer(Buffer *buffer) {
+char read_from_buffer(Buffer *buffer) {
     if (buffer->size == 0) {
         if (buffer->data[buffer->rseek]) {
             return buffer->data[buffer->rseek++];
@@ -43,20 +43,20 @@ char readFromBuffer(Buffer *buffer) {
     return '\0';
 }
 
-char writeToBuffer(Buffer *buffer, char c) {
+char write_to_buffer(Buffer *buffer, char c) {
     if (buffer->wseek >= buffer->size) return 1;
     buffer->data[buffer->wseek++] = c;
     return 0;
 }
 
-char popBuffer(Buffer *buffer) {
+char pop_buffer(Buffer *buffer) {
     if (buffer->wseek == 0) return '\0';
     return buffer->data[buffer->wseek--];
 }
 
-void resetSeek(Buffer *buffer) { buffer->rseek = buffer->wseek = 0; }
+void reset_seek(Buffer *buffer) { buffer->rseek = buffer->wseek = 0; }
 
-char pollInput(Buffer *line) {
+char poll_input(Buffer *line) {
     if (line->data = linenoise("vdb> ")) {
         linenoiseHistoryAdd(line->data);
         return 1;
@@ -65,37 +65,37 @@ char pollInput(Buffer *line) {
     }
 }
 
-int parseInput(Buffer *buffer, Buffer *line) {
+int parse_input(Buffer *buffer, Buffer *line) {
     if (line->data == NULL) {
         strcpy(buffer->data, "exit");
         return 1;
     }
 
     char next;
-    while (next = readFromBuffer(line)) {
+    while (next = read_from_buffer(line)) {
         if (next == ';') {
-            writeToBuffer(buffer, '\0');
+            write_to_buffer(buffer, '\0');
             return 1;
         }
 
-        if (!isWhitespace(next)) {
-            if (writeToBuffer(buffer, next)) {
+        if (!is_whitespace(next)) {
+            if (write_to_buffer(buffer, next)) {
                 return -1;
             }
-        } else if (peekBufferBack(buffer) != '\0') {
-            if (writeToBuffer(buffer, '\0')) {
+        } else if (peek_buffer_back(buffer) != '\0') {
+            if (write_to_buffer(buffer, '\0')) {
                 return -1;
             }
         }
     }
-    if (peekBufferBack(buffer) != '\0') {
-        writeToBuffer(buffer, '\0');
+    if (peek_buffer_back(buffer) != '\0') {
+        write_to_buffer(buffer, '\0');
     }
 
     return 0;
 }
 
-COMMAND matchCommand(char *buffer) {
+COMMAND match_command(char *buffer) {
     if (!buffer) {
         return INVALID;
     }
@@ -123,7 +123,7 @@ COMMAND matchCommand(char *buffer) {
     return INVALID;
 }
 
-bool isWhitespace(char c) {
+bool is_whitespace(char c) {
     switch (c) {
     case ' ':
     case '\t':
@@ -135,11 +135,11 @@ bool isWhitespace(char c) {
     }
 }
 
-char *nextToken(Buffer *buffer) {
+char *next_token(Buffer *buffer) {
     if (!buffer || !buffer->data[buffer->rseek]) return NULL;
     if (buffer->size && buffer->rseek >= buffer->wseek) return NULL;
     char *next = buffer->data + buffer->rseek;
-    while (readFromBuffer(buffer) != '\0') {
+    while (read_from_buffer(buffer) != '\0') {
         // skip characters
     }
 
@@ -147,7 +147,7 @@ char *nextToken(Buffer *buffer) {
     return next;
 }
 
-BREAKPOINT_OPTIONS matchBreakpointOption(char *buffer) {
+BREAKPOINT_OPTIONS match_breakpoint_option(char *buffer) {
     if (!buffer) {
         return INVALID_BREAKPOINT_OPT;
     }
@@ -171,7 +171,7 @@ BREAKPOINT_OPTIONS matchBreakpointOption(char *buffer) {
     return INVALID_BREAKPOINT_OPT;
 }
 
-REGISTER_OPTIONS matchRegisterOption(char *buffer) {
+REGISTER_OPTIONS match_register_option(char *buffer) {
     if (!buffer) return INVALID_REGISTER_OPT;
 
     if (!strcmp(buffer, "read")) {

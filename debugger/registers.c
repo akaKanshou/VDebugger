@@ -10,7 +10,7 @@ static int DWARFMappings[NUM_REGISTERS];
 //  registerAbbr contains the mapping of the registers with their abbreviations.
 static char registerAbbr[NUM_REGISTERS][12];
 
-void loadDWARFMappings() {
+void load_DW_mappings() {
     char *dat = "r15,15"
                 "r14,14"
                 "r13,13"
@@ -56,14 +56,14 @@ void loadDWARFMappings() {
     }
 }
 
-int regToDWARFN(REGISTER reg) {
+int reg_to_DW(REGISTER reg) {
     if (reg < 0 || reg >= NUM_REGISTERS) {
         return NO_SUCH_REGISTER;
     }
     return DWARFMappings[reg];
 }
 
-int regToAbbr(REGISTER reg, char *buf) {
+int reg_to_abbr(REGISTER reg, char *buf) {
     if (reg < 0 || reg >= NUM_REGISTERS) {
         return NO_SUCH_REGISTER;
     }
@@ -71,21 +71,21 @@ int regToAbbr(REGISTER reg, char *buf) {
     return 0;
 }
 
-REGISTER abbrToReg(const char *abbr) {
+REGISTER abbr_to_reg(const char *abbr) {
     for (REGISTER i = 0; i < NUM_REGISTERS; i++) {
         if (!strcmp(abbr, registerAbbr[i])) return i;
     }
     return NO_SUCH_REGISTER;
 }
 
-REGISTER DWARFNToReg(int DWARFN) {
+REGISTER DW_to_reg(int DWARFN) {
     for (REGISTER i = 0; i < NUM_REGISTERS; i++) {
         if (DWARFMappings[i] == DWARFN) return i;
     }
     return NO_SUCH_REGISTER;
 }
 
-UWORD *getRegister(regs_struct *regs, REGISTER reg) {
+UWORD *get_register(regs_struct *regs, REGISTER reg) {
     switch (reg) {
     case r15:
         return &regs->r15;
@@ -146,9 +146,9 @@ UWORD *getRegister(regs_struct *regs, REGISTER reg) {
     }
 }
 
-void printRegisters(regs_struct *regs) {
+void print_registers(regs_struct *regs) {
     for (REGISTER reg = 0; reg < NUM_REGISTERS; reg++) {
         fprintf(stdout, "%-12s:%llx\n", registerAbbr[reg],
-                *getRegister(regs, reg));
+                *get_register(regs, reg));
     }
 } // cmdline

@@ -42,27 +42,27 @@ typedef enum REGISTER {
     NUM_REGISTERS,
 } REGISTER;
 
-// loadDWARFMappings initializes the register info.
-void loadDWARFMappings();
+// load_DW_mappings initializes the register info.
+void load_DW_mappings();
 
-// regToDWARFN gets the DWARF register number of the given register.
-int regToDWARFN(REGISTER reg);
+// reg_to_DW gets the DWARF register number of the given register.
+int reg_to_DW(REGISTER reg);
 
-// regToAbbr copies the abbreviated name of the given register to buf.
-int regToAbbr(REGISTER reg, char *buf);
+// reg_to_abbr copies the abbreviated name of the given register to buf.
+int reg_to_abbr(REGISTER reg, char *buf);
 
-// abbrToReg gets the register number of the given register abbreviation.
-REGISTER abbrToReg(const char *regAbbr);
+// abbr_to_reg gets the register number of the given register abbreviation.
+REGISTER abbr_to_reg(const char *regAbbr);
 
-// DWARFNToReg gets the register number of the given DWARF register number.
-REGISTER DWARFNToReg(int DWARFN);
+// DW_to_reg gets the register number of the given DWARF register number.
+REGISTER DW_to_reg(int DWARFN);
 
-// getRegister returns the location of the register field in the given
+// get_register returns the location of the register field in the given
 // user_regs_struct struct.
 // Returns NULL if reg value is invalid.
-UWORD *getRegister(regs_struct *regs, REGISTER reg);
+UWORD *get_register(regs_struct *regs, REGISTER reg);
 
-// printRegisters prints the given regs_struct.
-void printRegisters(regs_struct *regs);
+// print_registers prints the given regs_struct.
+void print_registers(regs_struct *regs);
 
 #endif

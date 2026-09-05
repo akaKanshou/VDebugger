@@ -59,62 +59,62 @@ typedef struct Buffer {
     int wseek;
 } Buffer;
 
-// newBuffer initializes a Buffer and returns a pointer to it.
+// new_buffer initializes a Buffer and returns a pointer to it.
 // if size > 0: malloc's a buffer of specified size to data.
-Buffer *newBuffer(int size);
+Buffer *new_buffer(int size);
 
-// peekBuffer reads the next character from buffer without advancing rseek.
+// peek_buffer reads the next character from buffer without advancing rseek.
 // If there is nothing to read, null character is returned.
-char peekBuffer(Buffer *buffer);
+char peek_buffer(Buffer *buffer);
 
-// peekBuffer reads the last character from buffer without advancing rseek.
-// If there is nothing to read, null character is returned.
-char peekBufferBack(Buffer *buffer);
+// peek_buffer_back reads the last character from buffer without advancing
+// rseek. If there is nothing to read, null character is returned.
+char peek_buffer_back(Buffer *buffer);
 
-// readFromBuffer reads the next character from buffer and advances rseek by 1.
-// If there is nothing to read, null character is returned.
-char readFromBuffer(Buffer *buffer);
+// read_from_buffer reads the next character from buffer and advances rseek
+// by 1. If there is nothing to read, null character is returned.
+char read_from_buffer(Buffer *buffer);
 
-// writeToBuffer writes to buffer.
-char writeToBuffer(Buffer *buffer, char c);
+// write_to_buffer writes to buffer.
+char write_to_buffer(Buffer *buffer, char c);
 
-// popBuffer reduces the wseek by 1, effectively popping the last element.
+// pop_buffer reduces the wseek by 1, effectively popping the last element.
 // Returns the popped character.
 // Returns null character if buffer was empty.
-char popBuffer(Buffer *buffer);
+char pop_buffer(Buffer *buffer);
 
 // Resets both rseek and wseek to 0
-void resetSeek(Buffer *buffer);
+void reset_seek(Buffer *buffer);
 
-// pollInput takes input from user.
+// poll_input takes input from user.
 // Returns 0 on EOF or OOM.
-char pollInput(Buffer *line);
+char poll_input(Buffer *line);
 
-// parseInput parses the data in line by the character and stores in buffer.
+// parse_input parses the data in line by the character and stores in buffer.
 // Returns 1 if there a command ready to parsed. At this point buffer has a
 // command ready to read. Returns 0 if more input is needed. Returns -1 in case
 // of buffer overflow.
-int parseInput(Buffer *buffer, Buffer *line);
+int parse_input(Buffer *buffer, Buffer *line);
 
-// matchCommand matches the command string stored in buffer with available
+// match_command matches the command string stored in buffer with available
 // commands. If no command matches, returns the INVALID command.
-COMMAND matchCommand(char *buffer);
+COMMAND match_command(char *buffer);
 
-bool isWhitespace(char c);
+bool is_whitespace(char c);
 
-// nextToken advances buffer upto the next null character and returns the
+// next_token advances buffer upto the next null character and returns the
 // address to that character. The buffer upto this token is cleared.
-// A token is only useable till the next call to nextToken.
-char *nextToken(Buffer *buffer);
+// A token is only useable till the next call to next_token.
+char *next_token(Buffer *buffer);
 
-// matchBreakpointOption matches the command string stored in buffer with
+// match_breakpoint_option matches the command string stored in buffer with
 // available breakpoint command options. If no option matches, returns the
 // INVALID_BREAKPOINT_OPT command.
-BREAKPOINT_OPTIONS matchBreakpointOption(char *buffer);
+BREAKPOINT_OPTIONS match_breakpoint_option(char *buffer);
 
-// matchRegisterOption matches the command string stored in buffer with
+// match_register_option matches the command string stored in buffer with
 // available register command options. If no option matches, returns the
 // INVALID_REGISTER_OPT command.
-REGISTER_OPTIONS matchRegisterOption(char *buffer);
+REGISTER_OPTIONS match_register_option(char *buffer);
 
 #endif

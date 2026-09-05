@@ -16,18 +16,18 @@
 // TODO: Error handling ptrace and waitpid calls.
 // TODO: Change all variables to snake_case
 
-Debugger *newDebugger(int c_pid) {
+Debugger *new_debugger(int c_pid) {
     Debugger *dbg = (Debugger *)malloc(sizeof(Debugger));
     dbg->c_pid = c_pid;
-    dbg->breakpoints = hashmap_new(sizeof(Breakpoint), 0, 0, 0, BreakpointHash,
-                                   BreakpointCmp, NULL, NULL);
-    dbg->loadAddress = getLoadAddress(c_pid);
+    dbg->breakpoints = hashmap_new(sizeof(Breakpoint), 0, 0, 0, breakpoint_hash,
+                                   breakpoint_cmp, NULL, NULL);
+    dbg->load_address = get_load_address(c_pid);
     return dbg;
 }
 
-void freeDebugger(Debugger *dbg) { free(dbg); }
+void free_debugger(Debugger *dbg) { free(dbg); }
 
-WORD getLoadAddress(int c_pid) {
+WORD get_load_address(int c_pid) {
     char sysCall[64], memOffsetHex[64];
     sprintf(sysCall, "cat /proc/%i/maps | head -c 16", c_pid);
     FILE *fpipe = popen(sysCall, "r");
@@ -42,7 +42,7 @@ int wait_for_signal(Debugger *dbg, int *status, int options) {
     return 0;
 }
 
-int runDebugger(Debugger *dbg) {
+int run_debugger(Debugger *dbg) {
     if (dbg == NULL) {
         return -1;
     }
@@ -56,21 +56,21 @@ int runDebugger(Debugger *dbg) {
 
     int res;
     COMMAND cmnd;
-    Buffer *buffer = newBuffer(CMD_MAX_SIZE), *line = newBuffer(0);
-    while (cmnd != EXIT && pollInput(line)) {
-        while (res = parseInput(buffer, line)) {
+    Buffer *buffer = new_buffer(CMD_MAX_SIZE), *line = new_buffer(0);
+    while (cmnd != EXIT && poll_input(line)) {
+        while (res = parse_input(buffer, line)) {
             if (res < 0) {
                 cmnd = INVALID;
-                resetSeek(buffer);
+                reset_seek(buffer);
                 continue;
             }
 
-            cmnd = matchCommand(nextToken(buffer));
+            cmnd = match_command(next_token(buffer));
             if (cmnd == EXIT) {
                 break;
             }
 
-            int res = handleCommand(dbg, cmnd, buffer);
+            int res = handle_command(dbg, cmnd, buffer);
             if (!res) {
                 fprintf(stdout, "\nOK\n"); // cmdline
             } else if (res < 0) {
@@ -79,11 +79,11 @@ int runDebugger(Debugger *dbg) {
                 fprintf(stdout, "Debugee terminated\n"); // cndline
                 return 0;
             }
-            resetSeek(buffer);
+            reset_seek(buffer);
         }
 
         linenoiseFree(line->data);
-        resetSeek(line);
+        reset_seek(line);
     }
 
     free(buffer->data);
@@ -92,7 +92,7 @@ int runDebugger(Debugger *dbg) {
     return 0;
 }
 
-int debugContinue(Debugger *dbg) {
+int debug_continue(Debugger *dbg) {
     step_over_breakpoint(dbg);
 
     ptrace(PTRACE_CONT, dbg->c_pid, NULL, NULL);
@@ -111,14 +111,14 @@ int debugContinue(Debugger *dbg) {
     return 0;
 }
 
-int handleCommand(Debugger *dbg, COMMAND cmnd, Buffer *buffer) {
+int handle_command(Debugger *dbg, COMMAND cmnd, Buffer *buffer) {
     switch (cmnd) {
     case CONTINUE:
-        return debugContinue(dbg);
+        return debug_continue(dbg);
     case BREAKPOINT:
-        return handleBreakpoint(dbg, buffer);
+        return handle_breakpoint(dbg, buffer);
     case REG:
-        return handleRegister(dbg, buffer);
+        return handle_register(dbg, buffer);
     case STEP:
         return handle_step(dbg, buffer);
     default:
@@ -126,7 +126,7 @@ int handleCommand(Debugger *dbg, COMMAND cmnd, Buffer *buffer) {
         return 0;
     }
 
-    fprintf(stderr, "Unreachable state in handleCommand"); // cmdline
+    fprintf(stderr, "Unreachable state in handle_command"); // cmdline
     return -1;
 }
 
@@ -134,13 +134,13 @@ int handleCommand(Debugger *dbg, COMMAND cmnd, Buffer *buffer) {
 // BREAKPOINT
 // =======================================
 
-int handleBreakpoint(Debugger *dbg, Buffer *buffer) {
-    BREAKPOINT_OPTIONS action = matchBreakpointOption(nextToken(buffer)),
-                       mode = matchBreakpointOption(nextToken(buffer));
+int handle_breakpoint(Debugger *dbg, Buffer *buffer) {
+    BREAKPOINT_OPTIONS action = match_breakpoint_option(next_token(buffer)),
+                       mode = match_breakpoint_option(next_token(buffer));
     if (action == INVALID_BREAKPOINT_OPT || mode == INVALID_BREAKPOINT_OPT)
         return -1;
 
-    char *argToken = nextToken(buffer);
+    char *argToken = next_token(buffer);
     if (!argToken) return -1;
 
     WORD arg;
@@ -155,31 +155,31 @@ int handleBreakpoint(Debugger *dbg, Buffer *buffer) {
     default:
         return -2;
     }
-    arg += dbg->loadAddress;
+    arg += dbg->load_address;
 
     switch (action) {
     case ENABLE_BREAKPOINT:
-        return enableBreakpoint(dbg, arg);
+        return enable_breakpoint(dbg, arg);
     case DISABLE_BREAKPOINT:
-        return disableBreakpoint(dbg, arg);
+        return disable_breakpoint(dbg, arg);
     }
 
     return -1;
 }
 
-Breakpoint makeBreakpoint(WORD memAddr) {
+Breakpoint make_breakpoint(WORD memAddr) {
     Breakpoint breakpoint = {
-        .memAddrOffset = memAddr, .savedData = 0, .enabled = false};
+        .mem_addr = memAddr, .saved_data = 0, .enabled = false};
     return breakpoint;
 }
 
-int enableBreakpoint(Debugger *dbg, WORD memAddr) {
-    Breakpoint breakpoint = makeBreakpoint(memAddr);
+int enable_breakpoint(Debugger *dbg, WORD memAddr) {
+    Breakpoint breakpoint = make_breakpoint(memAddr);
     const Breakpoint *previous = hashmap_get(dbg->breakpoints, &breakpoint);
     if (previous && previous->enabled == true) return 1;
 
     WORD data = ptrace(PTRACE_PEEKDATA, dbg->c_pid, memAddr, NULL);
-    breakpoint.savedData = data;
+    breakpoint.saved_data = data;
 
     data = (data & ~0xff) | 0xcc;
     ptrace(PTRACE_POKEDATA, dbg->c_pid, memAddr, data, NULL);
@@ -189,27 +189,27 @@ int enableBreakpoint(Debugger *dbg, WORD memAddr) {
     return 0;
 }
 
-int disableBreakpoint(Debugger *dbg, WORD memAddr) {
-    Breakpoint breakpoint = makeBreakpoint(memAddr);
+int disable_breakpoint(Debugger *dbg, WORD memAddr) {
+    Breakpoint breakpoint = make_breakpoint(memAddr);
     const Breakpoint *previous = hashmap_get(dbg->breakpoints, &breakpoint);
     if (!previous || previous->enabled == false) return 1;
 
-    ptrace(PTRACE_POKEDATA, dbg->c_pid, memAddr, previous->savedData, NULL);
+    ptrace(PTRACE_POKEDATA, dbg->c_pid, memAddr, previous->saved_data, NULL);
 
     breakpoint.enabled = false;
     hashmap_set(dbg->breakpoints, &breakpoint);
     return 0;
 }
 
-int BreakpointCmp(const void *a, const void *b, void *udata) {
+int breakpoint_cmp(const void *a, const void *b, void *udata) {
     const Breakpoint *memA = a;
     const Breakpoint *memB = b;
-    return memA->memAddrOffset != memB->memAddrOffset;
+    return memA->mem_addr != memB->mem_addr;
 }
 
-uint64_t BreakpointHash(const void *item, uint64_t seed0, uint64_t seed1) {
+uint64_t breakpoint_hash(const void *item, uint64_t seed0, uint64_t seed1) {
     const Breakpoint *memA = item;
-    return hashmap_murmur(&memA->memAddrOffset, sizeof(memA->memAddrOffset),
+    return hashmap_murmur(&memA->mem_addr, sizeof(memA->mem_addr),
                           seed0, seed1);
 }
 
@@ -220,20 +220,20 @@ uint64_t BreakpointHash(const void *item, uint64_t seed0, uint64_t seed1) {
 // =======================================
 
 // TODO: Refactor this function. Does too much.
-int handleRegister(Debugger *dbg, Buffer *buffer) {
-    REGISTER_OPTIONS action = matchRegisterOption(nextToken(buffer)),
-                     mode = matchRegisterOption(nextToken(buffer));
+int handle_register(Debugger *dbg, Buffer *buffer) {
+    REGISTER_OPTIONS action = match_register_option(next_token(buffer)),
+                     mode = match_register_option(next_token(buffer));
 
     if (action == INVALID_REGISTER_OPT || mode == INVALID_REGISTER_OPT) {
         return -1;
     }
 
-    char *arg = nextToken(buffer);
+    char *arg = next_token(buffer);
     int res;
 
     regs_struct regs;
     REGISTER reg;
-    if (res = getRegsStruct(dbg, &regs)) {
+    if (res = get_regs_struct(dbg, &regs)) {
         return res;
     }
 
@@ -245,48 +245,48 @@ int handleRegister(Debugger *dbg, Buffer *buffer) {
                 return -1;
             }
 
-            printRegisters(&regs);
+            print_registers(&regs);
             return 0;
         }
 
         if (!arg) return -1;
 
         if (mode == REGISTER_ARG_ABBR) {
-            reg = abbrToReg(arg);
+            reg = abbr_to_reg(arg);
         } else if (mode == REGISTER_ARG_DWARF) {
             int dwarfn = strtol(arg, &arg, 16);
             if (arg + 1 < buffer->data + buffer->rseek) {
                 return -1;
             }
-            reg = DWARFNToReg(dwarfn);
+            reg = DW_to_reg(dwarfn);
         }
         if (reg == NO_SUCH_REGISTER) return -1;
 
-        fprintf(stdout, "value :%llx\n", *getRegister(&regs, reg)); // cmdline
+        fprintf(stdout, "value :%llx\n", *get_register(&regs, reg)); // cmdline
 
         return 0;
     case WRITE_REGISTER:
         if (!arg) return -1;
 
         if (mode == REGISTER_ARG_ABBR) {
-            reg = abbrToReg(arg);
+            reg = abbr_to_reg(arg);
         } else if (mode == REGISTER_ARG_DWARF) {
             int dwarfn = strtol(arg, &arg, 10);
             if (arg + 1 < buffer->data + buffer->rseek) {
                 return -1;
             }
-            reg = DWARFNToReg(dwarfn);
+            reg = DW_to_reg(dwarfn);
         }
         if (reg == NO_SUCH_REGISTER) return -1;
 
-        arg = nextToken(buffer);
+        arg = next_token(buffer);
         if (!arg) return -1;
         WORD value = strtoll(arg, &arg, 10);
         if (arg + 1 < buffer->data + buffer->rseek) {
             return -1;
         }
 
-        setRegValue(dbg, reg, value);
+        set_reg_value(dbg, reg, value);
 
         return 0;
     }
@@ -294,40 +294,40 @@ int handleRegister(Debugger *dbg, Buffer *buffer) {
     return -1;
 }
 
-int getRegsStruct(Debugger *dbg, regs_struct *regs) {
+int get_regs_struct(Debugger *dbg, regs_struct *regs) {
     ptrace(PTRACE_GETREGS, dbg->c_pid, NULL, regs);
     return 0;
 }
 
-int setRegsStruct(Debugger *dbg, regs_struct *regs) {
+int set_regs_struct(Debugger *dbg, regs_struct *regs) {
     ptrace(PTRACE_SETREGS, dbg->c_pid, NULL, regs);
     return 0;
 }
 
-int getRegValue(Debugger *dbg, REGISTER reg, WORD *value) {
+int get_reg_value(Debugger *dbg, REGISTER reg, WORD *value) {
     int res;
 
     regs_struct regs;
-    if (res = getRegsStruct(dbg, &regs)) return res;
+    if (res = get_regs_struct(dbg, &regs)) return res;
 
-    UWORD *regl = getRegister(&regs, reg);
+    UWORD *regl = get_register(&regs, reg);
     if (!regl) return NO_SUCH_REGISTER;
 
     *value = *regl;
     return 0;
 }
 
-int setRegValue(Debugger *dbg, REGISTER reg, WORD value) {
+int set_reg_value(Debugger *dbg, REGISTER reg, WORD value) {
     int res;
 
     regs_struct regs;
-    if (res = getRegsStruct(dbg, &regs)) return res;
+    if (res = get_regs_struct(dbg, &regs)) return res;
 
-    UWORD *regl = getRegister(&regs, reg);
+    UWORD *regl = get_register(&regs, reg);
     if (!regl) return NO_SUCH_REGISTER;
 
     *regl = value;
-    if (res = setRegsStruct(dbg, &regs)) return res;
+    if (res = set_regs_struct(dbg, &regs)) return res;
 
     return 0;
 }
@@ -349,20 +349,20 @@ int single_step(Debugger *dbg) {
 
 int step_over_breakpoint(Debugger *dbg) {
     regs_struct regs;
-    getRegsStruct(dbg, &regs);
+    get_regs_struct(dbg, &regs);
 
-    UWORD *program_counter = getRegister(&regs, rip);
+    UWORD *program_counter = get_register(&regs, rip);
     *program_counter = *program_counter - 1;
 
-    Breakpoint key = makeBreakpoint(*program_counter);
+    Breakpoint key = make_breakpoint(*program_counter);
     const Breakpoint *breakpoint = hashmap_get(dbg->breakpoints, &key);
     if (!breakpoint || !breakpoint->enabled) {
         // No breakpoint to step over, or is not enabled.
         return 0;
     }
 
-    disableBreakpoint(dbg, breakpoint->memAddrOffset); // Disable
-    setRegsStruct(dbg, &regs);                         // Rewind program counter
+    disable_breakpoint(dbg, breakpoint->mem_addr); // Disable
+    set_regs_struct(dbg, &regs);                         // Rewind program counter
     int res = single_step(dbg);                        // Single step
     if (res) {
         return -1;
@@ -375,12 +375,12 @@ int step_over_breakpoint(Debugger *dbg) {
         return -1;
     }
 
-    enableBreakpoint(dbg, breakpoint->memAddrOffset); // Enable breakpoint
+    enable_breakpoint(dbg, breakpoint->mem_addr); // Enable breakpoint
     return 0;
 }
 
 int handle_step(Debugger *dbg, Buffer *buffer) {
-    char *arg = nextToken(buffer);
+    char *arg = next_token(buffer);
     if (!arg) return -1;
 
     WORD times = strtoll(arg, &arg, 10);

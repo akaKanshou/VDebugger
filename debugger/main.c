@@ -32,16 +32,16 @@ int main(int argc, char *argv[]) {
     }
 
     // parent process
-    loadDWARFMappings();
+    load_DW_mappings();
 
-    Debugger *dbg = newDebugger(pid);
-    int err = runDebugger(dbg);
+    Debugger *dbg = new_debugger(pid);
+    int err = run_debugger(dbg);
     if (err) {
         fprintf(stderr, "Encountered an error: %i", err);
         return 1;
     }
     ptrace(PT_DETACH, dbg->c_pid, NULL);
-    freeDebugger(dbg);
+    free_debugger(dbg);
 
     return 0;
 }
