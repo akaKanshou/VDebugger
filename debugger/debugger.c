@@ -463,7 +463,7 @@ int handle_where(Debugger *dbg, Buffer *buffer) {
 
         fprintf(stdout, "Current function: %s\n", func_name);
         return 0;
-    case WHERE_ARG_FILE:
+    case WHERE_ARG_LINE:
         return 0;
     default:
         return -1;

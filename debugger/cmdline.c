@@ -206,8 +206,8 @@ WHERE_OPTIONS match_where_option(char *buffer) {
         return WHERE_ARG_FUNC;
     }
 
-    if (!strcmp(buffer, "file")) {
-        return WHERE_ARG_FILE;
+    if (!strcmp(buffer, "line")) {
+        return WHERE_ARG_LINE;
     }
 
     if (!strcmp(buffer, "addr")) {

@@ -147,7 +147,7 @@ int handle_step(Debugger *dbg, Buffer *buffer);
 // handle_where handles a where query command.
 // Returns 0 on success and < 0 on error.
 // Command syntax:
-// where [addr | func | file]
+// where [addr | func | line]
 int handle_where(Debugger *dbg, Buffer *buffer);
 
 // =======================================
