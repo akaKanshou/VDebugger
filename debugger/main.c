@@ -34,7 +34,7 @@ int main(int argc, char *argv[]) {
     // parent process
     load_DW_mappings();
 
-    Debugger *dbg = new_debugger(pid);
+    Debugger *dbg = new_debugger(pid, program);
     int err = run_debugger(dbg);
     if (err) {
         fprintf(stderr, "Encountered an error: %i", err);

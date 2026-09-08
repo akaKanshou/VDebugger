@@ -97,7 +97,7 @@ int parse_input(Buffer *buffer, Buffer *line) {
 
 COMMAND match_command(char *buffer) {
     if (!buffer) {
-        return INVALID;
+        return INVALID_CMD;
     }
 
     if (!strcmp(buffer, "continue")) {
@@ -120,7 +120,11 @@ COMMAND match_command(char *buffer) {
         return STEP;
     }
 
-    return INVALID;
+    if (!strcmp(buffer, "where")) {
+        return WHERE;
+    }
+
+    return INVALID_CMD;
 }
 
 bool is_whitespace(char c) {
@@ -195,4 +199,20 @@ REGISTER_OPTIONS match_register_option(char *buffer) {
     }
 
     return INVALID_REGISTER_OPT;
+}
+
+WHERE_OPTIONS match_where_option(char *buffer) {
+    if (!strcmp(buffer, "func")) {
+        return WHERE_ARG_FUNC;
+    }
+
+    if (!strcmp(buffer, "file")) {
+        return WHERE_ARG_FILE;
+    }
+
+    if (!strcmp(buffer, "addr")) {
+        return WHERE_ARG_ADDR;
+    }
+
+    return INVALID_WHERE_OPT;
 }

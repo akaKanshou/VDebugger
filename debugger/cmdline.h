@@ -16,9 +16,10 @@ typedef enum COMMAND {
     BREAKPOINT,
     EXIT,
     STEP,
+    WHERE,
 
     NUM_CMDS,
-    INVALID,
+    INVALID_CMD,
 } COMMAND;
 
 typedef enum BREAKPOINT_OPTIONS {
@@ -41,6 +42,14 @@ typedef enum REGISTER_OPTIONS {
 
     INVALID_REGISTER_OPT,
 } REGISTER_OPTIONS;
+
+typedef enum WHERE_OPTIONS {
+    WHERE_ARG_FUNC,
+    WHERE_ARG_ADDR,
+    WHERE_ARG_FILE,
+
+    INVALID_WHERE_OPT,
+} WHERE_OPTIONS;
 
 // Minimal char buffer class
 typedef struct Buffer {
@@ -97,7 +106,7 @@ char poll_input(Buffer *line);
 int parse_input(Buffer *buffer, Buffer *line);
 
 // match_command matches the command string stored in buffer with available
-// commands. If no command matches, returns the INVALID command.
+// commands. If no command matches, returns the INVALID_CMD command.
 COMMAND match_command(char *buffer);
 
 bool is_whitespace(char c);
@@ -116,5 +125,10 @@ BREAKPOINT_OPTIONS match_breakpoint_option(char *buffer);
 // available register command options. If no option matches, returns the
 // INVALID_REGISTER_OPT command.
 REGISTER_OPTIONS match_register_option(char *buffer);
+
+// match_where_option matches the command string stored in buffer with
+// available where command options. If no option matches, returns the
+// INVALID_WHERE_OPT command.
+WHERE_OPTIONS match_where_option(char *buffer);
 
 #endif

@@ -16,16 +16,21 @@
 // TODO: Error handling ptrace and waitpid calls.
 // TODO: Change all variables to snake_case
 
-Debugger *new_debugger(int c_pid) {
+Debugger *new_debugger(int c_pid, char *file) {
     Debugger *dbg = (Debugger *)malloc(sizeof(Debugger));
     dbg->c_pid = c_pid;
     dbg->breakpoints = hashmap_new(sizeof(Breakpoint), 0, 0, 0, breakpoint_hash,
                                    breakpoint_cmp, NULL, NULL);
     dbg->load_address = get_load_address(c_pid);
+    int res = init_dwarf(file, &dbg->dwarf_dbg);
+    if (!dbg->load_address || res) return NULL;
     return dbg;
 }
 
-void free_debugger(Debugger *dbg) { free(dbg); }
+void free_debugger(Debugger *dbg) {
+    dwarf_finish(dbg->dwarf_dbg);
+    free(dbg);
+}
 
 WORD get_load_address(int c_pid) {
     char sysCall[64], memOffsetHex[64];
@@ -60,7 +65,7 @@ int run_debugger(Debugger *dbg) {
     while (cmnd != EXIT && poll_input(line)) {
         while (res = parse_input(buffer, line)) {
             if (res < 0) {
-                cmnd = INVALID;
+                cmnd = INVALID_CMD;
                 reset_seek(buffer);
                 continue;
             }
@@ -121,6 +126,8 @@ int handle_command(Debugger *dbg, COMMAND cmnd, Buffer *buffer) {
         return handle_register(dbg, buffer);
     case STEP:
         return handle_step(dbg, buffer);
+    case WHERE:
+        return handle_where(dbg, buffer);
     default:
         fprintf(stdout, "Unknown command"); // cmdline
         return 0;
@@ -209,8 +216,8 @@ int breakpoint_cmp(const void *a, const void *b, void *udata) {
 
 uint64_t breakpoint_hash(const void *item, uint64_t seed0, uint64_t seed1) {
     const Breakpoint *memA = item;
-    return hashmap_murmur(&memA->mem_addr, sizeof(memA->mem_addr),
-                          seed0, seed1);
+    return hashmap_murmur(&memA->mem_addr, sizeof(memA->mem_addr), seed0,
+                          seed1);
 }
 
 // =======================================
@@ -362,8 +369,8 @@ int step_over_breakpoint(Debugger *dbg) {
     }
 
     disable_breakpoint(dbg, breakpoint->mem_addr); // Disable
-    set_regs_struct(dbg, &regs);                         // Rewind program counter
-    int res = single_step(dbg);                        // Single step
+    set_regs_struct(dbg, &regs);                   // Rewind program counter
+    int res = single_step(dbg);                    // Single step
     if (res) {
         return -1;
     }
@@ -401,6 +408,68 @@ int handle_step(Debugger *dbg, Buffer *buffer) {
     }
     if (res) return -1;
     return 0;
+}
+
+// =======================================
+
+// =======================================
+// Where
+// =======================================
+
+int handle_where(Debugger *dbg, Buffer *buffer) {
+    char *arg = next_token(buffer);
+    if (!arg) return -1;
+
+    WHERE_OPTIONS mode = match_where_option(arg);
+    int res;
+
+    WORD pc;
+    res = get_reg_value(dbg, rip, &pc);
+    if (res < 0) return res;
+
+    switch (mode) {
+    case WHERE_ARG_ADDR:
+        // cmdline
+        fprintf(stdout, "Program Counter: %llx Offset: %llx\n", pc,
+                pc - dbg->load_address);
+
+        return 0;
+    case WHERE_ARG_FUNC:
+
+        Dwarf_Die sub_prog_die;
+        Dwarf_Error error;
+        res = get_sub_prog_die_from_addr(pc - dbg->load_address, dbg->dwarf_dbg,
+                                         &sub_prog_die, &error);
+
+        if (res == DW_DLV_ERROR) {
+            fprintf(stdout, "! x !\n");
+            dwarf_dealloc_error(dbg->dwarf_dbg, error);
+            return -1;
+        }
+
+        char *func_name;
+        res = get_sub_program_name(dbg->dwarf_dbg, sub_prog_die, &func_name,
+                                   &error);
+
+        dwarf_dealloc_die(sub_prog_die);
+        if (res == DW_DLV_ERROR) {
+            fprintf(stderr, "massive fucking L nerd %s\n", dwarf_errmsg(error));
+            dwarf_dealloc_error(dbg->dwarf_dbg, error);
+            return -1;
+        } else if (res == DW_DLV_NO_ENTRY) {
+            fprintf(stdout, "Unknown name :(\n");
+            return 0;
+        }
+
+        fprintf(stdout, "Current function: %s\n", func_name);
+        return 0;
+    case WHERE_ARG_FILE:
+        return 0;
+    default:
+        return -1;
+    }
+
+    return -1;
 }
 
 // =======================================

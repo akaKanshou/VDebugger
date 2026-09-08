@@ -9,7 +9,7 @@
 typedef struct user_regs_struct regs_struct;
 
 typedef unsigned long long int UWORD;
-typedef int64_t WORD;
+typedef long long int WORD;
 
 typedef enum REGISTER {
     r15,

@@ -2,13 +2,14 @@
 #define DEBUGGER_h
 
 #include "cmdline.h"
+#include "dwarf_info.h"
 #include "hashmap.h"
 #include "registers.h"
 
 #include <stdbool.h>
 #include <stdlib.h>
 
-typedef int64_t WORD;
+typedef long long int WORD;
 
 typedef struct hashmap hashmap;
 
@@ -16,11 +17,12 @@ typedef struct Debugger {
     int c_pid;
     WORD load_address;
     hashmap *breakpoints;
+    Dwarf_Debug dwarf_dbg;
 } Debugger;
 
 // new_debugger returns a pointer to a Debugger initialized with the process id
 // of the specified child process.
-Debugger *new_debugger(int c_pid);
+Debugger *new_debugger(int c_pid, char *file);
 
 // free_debugger frees the Debugger struct.
 void free_debugger(Debugger *dbg);
@@ -135,6 +137,18 @@ int step_over_breakpoint(Debugger *dbg);
 // Command syntax:
 // step <times>
 int handle_step(Debugger *dbg, Buffer *buffer);
+
+// =======================================
+
+// =======================================
+// Where
+// =======================================
+
+// handle_where handles a where query command.
+// Returns 0 on success and < 0 on error.
+// Command syntax:
+// where [addr | func | file]
+int handle_where(Debugger *dbg, Buffer *buffer);
 
 // =======================================
 
