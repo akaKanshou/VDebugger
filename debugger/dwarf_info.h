@@ -55,4 +55,22 @@ int die_contains_addr_offset(WORD addr_offset, Dwarf_Debug dwarf_dbg,
 int get_sub_program_name(Dwarf_Debug dwarf_dbg, Dwarf_Die die,
                          char **dw_at_name_str, Dwarf_Error *error);
 
+// Gets the Dwarf Line Context of the given CU.
+// Returns DW_DLV_OK etc and populates dw_line_context passed on success.
+int get_line_context(Dwarf_Debug dwarf_dbg, Dwarf_Die cu_die,
+                     Dwarf_Line_Context *line_context, Dwarf_Small *table_count,
+                     Dwarf_Unsigned *version, Dwarf_Error *error);
+
+// Gets the lines from a line context.
+// Returns DW_DLV_OK etc. Populates dw_lines on success.
+int get_src_lines_from_context(Dwarf_Debug dwarf_dbg, Dwarf_Die cu_die,
+                               Dwarf_Line_Context line_context,
+                               Dwarf_Line **dw_lines, Dwarf_Signed *line_count,
+                               Dwarf_Error *error);
+
+// Get the line number in the source file of the given addr.
+// Returns DW_DLV_OK etc.
+int get_line_no_from_addr(Dwarf_Unsigned addr_offset, Dwarf_Debug dwarf_dbg,
+                          Dwarf_Unsigned *line_no, Dwarf_Error *error);
+
 #endif

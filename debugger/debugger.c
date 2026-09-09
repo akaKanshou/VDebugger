@@ -427,6 +427,8 @@ int handle_where(Debugger *dbg, Buffer *buffer) {
     res = get_reg_value(dbg, rip, &pc);
     if (res < 0) return res;
 
+    Dwarf_Error error;
+
     switch (mode) {
     case WHERE_ARG_ADDR:
         // cmdline
@@ -436,13 +438,12 @@ int handle_where(Debugger *dbg, Buffer *buffer) {
         return 0;
     case WHERE_ARG_FUNC:
 
-        Dwarf_Die sub_prog_die;
-        Dwarf_Error error;
+        Dwarf_Die sub_prog_die = 0;
         res = get_sub_prog_die_from_addr(pc - dbg->load_address, dbg->dwarf_dbg,
                                          &sub_prog_die, &error);
 
         if (res == DW_DLV_ERROR) {
-            fprintf(stdout, "! x !\n");
+            fprintf(stderr, "error: %s\n", dwarf_errmsg(error));
             dwarf_dealloc_error(dbg->dwarf_dbg, error);
             return -1;
         }
@@ -453,7 +454,7 @@ int handle_where(Debugger *dbg, Buffer *buffer) {
 
         dwarf_dealloc_die(sub_prog_die);
         if (res == DW_DLV_ERROR) {
-            fprintf(stderr, "massive fucking L nerd %s\n", dwarf_errmsg(error));
+            fprintf(stderr, "error: %s\n", dwarf_errmsg(error));
             dwarf_dealloc_error(dbg->dwarf_dbg, error);
             return -1;
         } else if (res == DW_DLV_NO_ENTRY) {
@@ -464,6 +465,18 @@ int handle_where(Debugger *dbg, Buffer *buffer) {
         fprintf(stdout, "Current function: %s\n", func_name);
         return 0;
     case WHERE_ARG_LINE:
+
+        Dwarf_Unsigned line_no;
+        res = get_line_no_from_addr(pc - dbg->load_address, dbg->dwarf_dbg,
+                                    &line_no, &error);
+        if (res == DW_DLV_ERROR) {
+            fprintf(stdout, "error: %s\n", dwarf_errmsg(error));
+            return -1;
+        } else if (res == DW_DLV_NO_ENTRY) {
+            return -1;
+        }
+
+        fprintf(stdout, "Current line: %lli\n", line_no);
         return 0;
     default:
         return -1;

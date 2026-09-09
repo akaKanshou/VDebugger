@@ -208,3 +208,103 @@ int get_sub_program_name(Dwarf_Debug dwarf_dbg, Dwarf_Die die,
     res = dwarf_diename(die, dw_at_name_str, error);
     return res;
 }
+
+int get_line_context(Dwarf_Debug dwarf_dbg, Dwarf_Die cu_die,
+                     Dwarf_Line_Context *line_context, Dwarf_Small *table_count,
+                     Dwarf_Unsigned *version, Dwarf_Error *error) {
+    int res;
+
+    res = dwarf_srclines_b(cu_die, version, table_count, line_context, error);
+    if (res != DW_DLV_OK) {
+        return res;
+    }
+
+    if (*table_count != 1) {
+        // Not supporting experimental two-level line table or empty line table.
+        dwarf_srclines_dealloc_b(*line_context);
+        return DW_DLV_NO_ENTRY;
+    }
+
+    return res;
+}
+
+int get_src_lines_from_context(Dwarf_Debug dwarf_dbg, Dwarf_Die cu_die,
+                               Dwarf_Line_Context line_context,
+                               Dwarf_Line **dw_lines, Dwarf_Signed *line_count,
+                               Dwarf_Error *error) {
+
+    int res;
+
+    res = dwarf_srclines_from_linecontext(line_context, dw_lines, line_count,
+                                          error);
+
+    if (res != DW_DLV_OK) {
+        return res;
+    }
+
+    return res;
+}
+
+int get_line_no_from_addr(Dwarf_Unsigned addr_offset, Dwarf_Debug dwarf_dbg,
+                          Dwarf_Unsigned *line_no, Dwarf_Error *error) {
+    Dwarf_Die cu_die;
+    int res;
+
+    res = get_cu_from_addr(addr_offset, dwarf_dbg, &cu_die, error);
+    if (res == DW_DLV_ERROR) {
+        return res;
+    }
+
+    Dwarf_Signed count = 0;
+    Dwarf_Line_Context line_context = 0;
+    Dwarf_Line *line_buf = 0;
+    Dwarf_Small table_count = 0;
+    Dwarf_Unsigned version = 0;
+
+    res = get_line_context(dwarf_dbg, cu_die, &line_context, &table_count,
+                           &version, error);
+    if (res != DW_DLV_OK) {
+        dwarf_dealloc_die(cu_die);
+        return res;
+    }
+
+    res = get_src_lines_from_context(dwarf_dbg, cu_die, line_context, &line_buf,
+                                     &count, error);
+    if (res != DW_DLV_OK) {
+        dwarf_dealloc_die(cu_die);
+        dwarf_srclines_dealloc_b(line_context);
+        return res;
+    }
+
+    Dwarf_Signed low = 0, high = count - 1, mid;
+
+    Dwarf_Unsigned line_addr;
+    while (low <= high) {
+        mid = (low + high) / 2;
+
+        res = dwarf_lineaddr(line_buf[mid], &line_addr, error);
+
+        if (res != DW_DLV_OK) {
+            dwarf_dealloc_die(cu_die);
+            dwarf_srclines_dealloc_b(line_context);
+            return res;
+        }
+
+        if (line_addr > addr_offset) {
+            high = mid - 1;
+        } else {
+            low = mid + 1;
+        }
+    }
+
+    if (high < 0) {
+        dwarf_dealloc_die(cu_die);
+        dwarf_srclines_dealloc_b(line_context);
+        return DW_DLV_NO_ENTRY;
+    }
+
+    res = dwarf_lineno(line_buf[high], line_no, error);
+    dwarf_dealloc_die(cu_die);
+    dwarf_srclines_dealloc_b(line_context);
+    return res;
+}
