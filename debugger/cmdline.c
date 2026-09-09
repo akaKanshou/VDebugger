@@ -217,3 +217,28 @@ WHERE_OPTIONS match_where_option(char *buffer) {
 
     return INVALID_WHERE_OPT;
 }
+
+bool merge_and_check_path(const char *path, const char *dir_path,
+                          const char *file_name) {
+
+    unsigned long long x = strlen(dir_path), y = strlen(file_name),
+                       z = strlen(path);
+
+    if (x + y + 1 != z) {
+        return false; // mismatched size
+    }
+
+    if (path[x] != '/') {
+        return false; // seperator
+    }
+
+    if (strncmp(path, dir_path, x)) {
+        return false; // mismatched directory
+    }
+
+    if (strncmp(path + x + 1, file_name, y)) {
+        return false; // mismatched file name
+    }
+
+    return true;
+}

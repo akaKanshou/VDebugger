@@ -130,4 +130,9 @@ REGISTER_OPTIONS match_register_option(char *buffer);
 // INVALID_WHERE_OPT command.
 WHERE_OPTIONS match_where_option(char *buffer);
 
+// Helper function to check if {dir_path}/{file_name} matches given path.
+// TODO: clean file path. Relative file paths are unlikely to work here.
+bool merge_and_check_path(const char *path, const char *dir_path,
+                          const char *file_name);
+
 #endif

@@ -157,6 +157,23 @@ int handle_breakpoint(Debugger *dbg, Buffer *buffer) {
         if (*argEnd) return -1;
         break;
     case BREAKPOINT_ARG_LINENUM:
+        char *file_name = argToken;
+        argToken = next_token(buffer);
+        arg = strtoll(argToken, &argEnd, 10);
+        if (*argEnd) return -1;
+        Dwarf_Addr addr;
+        Dwarf_Error error;
+        int res = get_addr_from_source_line(file_name, arg, dbg->dwarf_dbg,
+                                            &addr, &error);
+        if (res == DW_DLV_ERROR) {
+            fprintf(stdout, "error:%s\n", dwarf_errmsg(error));
+            return -1;
+        } else if (res != DW_DLV_OK) {
+            fprintf(stdout, "noentry\n");
+            return -1;
+        }
+
+        arg = addr;
         break;
     default:
         return -2;

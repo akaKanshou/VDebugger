@@ -1,6 +1,8 @@
 #include "dwarf_info.h"
+#include "cmdline.h"
 
 // TODO: Add descriptive error handling
+// TODO: Remove need to get version, table version etc on line context
 
 #include <linux/limits.h>
 #include <stdbool.h>
@@ -308,4 +310,134 @@ int get_line_no_from_addr(Dwarf_Unsigned addr_offset, Dwarf_Debug dwarf_dbg,
     dwarf_dealloc_die(cu_die);
     dwarf_srclines_dealloc_b(line_context);
     return res;
+}
+
+int get_addr_from_source_line(const char *source_file_name,
+                              Dwarf_Unsigned line_num, Dwarf_Debug dwarf_dbg,
+                              Dwarf_Addr *line_addr, Dwarf_Error *error) {
+
+    int res;
+    Dwarf_Die cu_die;
+
+    res = get_cu_from_file_name(source_file_name, dwarf_dbg, &cu_die, error);
+    if (res != DW_DLV_OK) {
+        return res;
+    }
+
+    Dwarf_Signed count = 0;
+    Dwarf_Line_Context line_context = 0;
+    Dwarf_Line *line_buf = 0;
+    Dwarf_Small table_count = 0;
+    Dwarf_Unsigned version = 0;
+
+    res = get_line_context(dwarf_dbg, cu_die, &line_context, &table_count,
+                           &version, error);
+
+    if (res != DW_DLV_OK) {
+        dwarf_dealloc_die(cu_die);
+        return res;
+    }
+
+    res = get_src_lines_from_context(dwarf_dbg, cu_die, line_context, &line_buf,
+                                     &count, error);
+    if (res != DW_DLV_OK) {
+        dwarf_dealloc_die(cu_die);
+        dwarf_srclines_dealloc_b(line_context);
+        return res;
+    }
+
+    char *file_name;
+
+    for (Dwarf_Signed i = 0; i < count; i++) {
+        res = dwarf_linesrc(line_buf[i], &file_name, error);
+        if (res != DW_DLV_OK) {
+            dwarf_dealloc_die(cu_die);
+            dwarf_srclines_dealloc_b(line_context);
+            return res;
+        }
+
+        if (strcmp(file_name, source_file_name)) {
+            continue;
+        }
+
+        res = dwarf_lineaddr(line_buf[i], line_addr, error);
+
+        dwarf_dealloc_die(cu_die);
+        dwarf_srclines_dealloc_b(line_context);
+        return res;
+    }
+
+    dwarf_dealloc_die(cu_die);
+    dwarf_srclines_dealloc_b(line_context);
+    return DW_DLV_NO_ENTRY;
+}
+
+int get_cu_from_file_name(const char *source_file_name, Dwarf_Debug dwarf_dbg,
+                          Dwarf_Die *res_cu_die, Dwarf_Error *error) {
+
+    Dwarf_Unsigned abbrev_offset = 0;
+    Dwarf_Half address_size = 0;
+    Dwarf_Half version_stamp = 0;
+    Dwarf_Half offset_size = 0;
+    Dwarf_Half extension_size = 0;
+    Dwarf_Sig8 signature;
+    Dwarf_Unsigned typeoffset = 0;
+    Dwarf_Unsigned next_cu_header = 0;
+    Dwarf_Half header_cu_type = 0;
+    Dwarf_Bool is_info = true;
+
+    int res = 0;
+    bool found = false, check;
+
+    while (true) {
+        Dwarf_Die cu_die = 0;
+        Dwarf_Unsigned cu_header_length = 0;
+
+        memset(&signature, 0, sizeof(signature));
+        res = dwarf_next_cu_header_e(
+            dwarf_dbg, is_info, &cu_die, &cu_header_length, &version_stamp,
+            &abbrev_offset, &address_size, &offset_size, &extension_size,
+            &signature, &typeoffset, &next_cu_header, &header_cu_type, error);
+        if (res == DW_DLV_ERROR) {
+            return res;
+        } else if (res == DW_DLV_NO_ENTRY) {
+            break;
+        }
+
+        char *file_name, *dir_path;
+        res = dwarf_die_text(cu_die, DW_AT_name, &file_name, error);
+        if (res != DW_DLV_OK) {
+            dwarf_dealloc_die(cu_die);
+            if (res == DW_DLV_ERROR) {
+                return res;
+            }
+            continue;
+        }
+
+        res = dwarf_die_text(cu_die, DW_AT_comp_dir, &dir_path, error);
+        if (res != DW_DLV_OK) {
+            dwarf_dealloc_die(cu_die);
+            if (res == DW_DLV_ERROR) {
+                return res;
+            }
+            continue;
+        }
+
+        if (file_name[0] == '/') {
+            dir_path = "\0"; // if file is already absolute
+            file_name++;
+        }
+        check = merge_and_check_path(source_file_name, dir_path, file_name);
+
+        if (check) {
+            *res_cu_die = cu_die;
+            found = true;
+            continue;
+        }
+
+        dwarf_dealloc_die(cu_die);
+    }
+
+    if (found) return DW_DLV_OK;
+    return DW_DLV_NO_ENTRY;
 }

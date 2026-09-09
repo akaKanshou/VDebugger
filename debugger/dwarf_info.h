@@ -73,4 +73,21 @@ int get_src_lines_from_context(Dwarf_Debug dwarf_dbg, Dwarf_Die cu_die,
 int get_line_no_from_addr(Dwarf_Unsigned addr_offset, Dwarf_Debug dwarf_dbg,
                           Dwarf_Unsigned *line_no, Dwarf_Error *error);
 
+// Gets the line_addr of the line in the given file with the specified line
+// number.
+// file_name must be the absolute path to the file at the time of compilation
+// Returns DW_DLV_OK etc. Runs in O(num of lines)
+// Returns DW_DLV_NO_ENTRY
+//  a) if line_num exceeds number of lines in the source file
+//  b) if line_num is blank in source file
+// TODO: Try O(log(num of lines)) with pre-processing (file name, line num) pair
+int get_addr_from_source_line(const char *source_file_name,
+                              Dwarf_Unsigned line_num, Dwarf_Debug dwarf_dbg,
+                              Dwarf_Addr *line_addr, Dwarf_Error *error);
+
+// Gets the CU DIE with the specified source file name
+// Returns DW_DLV_OK etc.
+int get_cu_from_file_name(const char *file_name, Dwarf_Debug dwarf_dbg,
+                          Dwarf_Die *res_cu_die, Dwarf_Error *error);
+
 #endif
