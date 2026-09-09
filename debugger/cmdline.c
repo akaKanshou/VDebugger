@@ -1,7 +1,8 @@
 #include "cmdline.h"
+#include <linux/limits.h>
 #include <string.h>
 
-const int CMD_MAX_SIZE = 1024;
+const int CMD_MAX_SIZE = PATH_MAX + FILENAME_MAX + 256;
 
 Buffer *new_buffer(int size) {
     Buffer *buffer = (Buffer *)malloc(sizeof(Buffer));

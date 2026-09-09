@@ -112,8 +112,7 @@ COMMAND match_command(char *buffer);
 bool is_whitespace(char c);
 
 // next_token advances buffer upto the next null character and returns the
-// address to that character. The buffer upto this token is cleared.
-// A token is only useable till the next call to next_token.
+// address to that character.
 char *next_token(Buffer *buffer);
 
 // match_breakpoint_option matches the command string stored in buffer with

@@ -147,13 +147,12 @@ int handle_breakpoint(Debugger *dbg, Buffer *buffer) {
     if (action == INVALID_BREAKPOINT_OPT || mode == INVALID_BREAKPOINT_OPT)
         return -1;
 
-    char *argToken = next_token(buffer);
+    char *argToken = next_token(buffer), *argEnd;
     if (!argToken) return -1;
 
     WORD arg;
     switch (mode) {
     case BREAKPOINT_ARG_MEMADDR:
-        char *argEnd;
         arg = strtoll(argToken, &argEnd, 16);
         if (*argEnd) return -1;
         break;
