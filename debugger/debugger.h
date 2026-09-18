@@ -1,5 +1,7 @@
 #ifndef DEBUGGER_H
-#define DEBUGGER_h
+#define DEBUGGER_H
+
+#define _GNU_SOURCE
 
 #include "cmdline.h"
 #include "dwarf_info.h"
@@ -8,6 +10,8 @@
 
 #include <stdbool.h>
 #include <stdlib.h>
+
+#include <sys/signal.h>
 
 typedef long long int WORD;
 
@@ -37,6 +41,12 @@ WORD get_load_address(int c_pid);
 // Wrapper for waitpid.
 // TODO: Error handling.
 int wait_for_signal(Debugger *dbg, int *status, int options);
+
+// Populate a siginfo_t about the information about a waitpid call.
+int get_siginfo(Debugger *dbg, siginfo_t *info);
+
+// Handle a SIGTRAP si_code
+int handle_sigtrap(Debugger *dbg, siginfo_t *info);
 
 // handle_command calls the approriate handler for specified command.
 // Returns 0 on success, 1 if debugger should terminate and, < 0 on failure.
@@ -127,8 +137,7 @@ int set_reg_value(Debugger *dbg, REGISTER reg, WORD value);
 int single_step(Debugger *dbg);
 
 // step_over_breakpoint steps over the current breakpoint IF EXISTS.
-// Disables breakpoint -> Rewinds PC to breakpoint -> Steps over once -> Enables
-// breakpoint.
+// Disables breakpoint ->  Steps over once -> Enables breakpoint.
 // Returns 0 on success, 1 if breakpoint doesn't exist, and < 0 on error.
 int step_over_breakpoint(Debugger *dbg);
 

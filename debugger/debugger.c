@@ -44,7 +44,39 @@ WORD get_load_address(int c_pid) {
 int wait_for_signal(Debugger *dbg, int *status, int options) {
     errno = 0;
     if (waitpid(dbg->c_pid, status, options) == -1) return errno;
+
+    siginfo_t info;
+    get_siginfo(dbg, &info);
+    switch (info.si_signo) {
+    case SIGTRAP:
+        handle_sigtrap(dbg, &info);
+        break;
+    default:
+        fprintf(stdout, "\nUnhandled signal: %i\n", info.si_code);
+    }
+
     return 0;
+}
+
+int handle_sigtrap(Debugger *dbg, siginfo_t *info) {
+    switch (info->si_code) {
+    case SI_KERNEL:
+    case TRAP_BRKPT:
+        regs_struct regs;
+        get_regs_struct(dbg, &regs);
+        UWORD *pc = get_register(&regs, rip);
+        *pc = *pc - 1;
+        set_regs_struct(dbg, &regs);
+        break;
+    case TRAP_TRACE:
+    }
+    return 0;
+}
+
+int get_siginfo(Debugger *dbg, siginfo_t *info) {
+    errno = 0;
+    ptrace(PTRACE_GETSIGINFO, dbg->c_pid, NULL, info);
+    return errno;
 }
 
 int run_debugger(Debugger *dbg) {
@@ -375,7 +407,6 @@ int step_over_breakpoint(Debugger *dbg) {
     get_regs_struct(dbg, &regs);
 
     UWORD *program_counter = get_register(&regs, rip);
-    *program_counter = *program_counter - 1;
 
     Breakpoint key = make_breakpoint(*program_counter);
     const Breakpoint *breakpoint = hashmap_get(dbg->breakpoints, &key);
@@ -385,9 +416,8 @@ int step_over_breakpoint(Debugger *dbg) {
     }
 
     disable_breakpoint(dbg, breakpoint->mem_addr); // Disable
-    set_regs_struct(dbg, &regs);                   // Rewind program counter
     int res = single_step(dbg);                    // Single step
-    if (res) {
+    if (res < 0) {
         return -1;
     }
 
@@ -411,15 +441,25 @@ int handle_step(Debugger *dbg, Buffer *buffer) {
 
     int res = 0;
     while (times--) {
-        if (res = single_step(dbg)) {
-            break;
-        }
+        UWORD pc;
+        get_reg_value(dbg, rip, &pc);
+        Breakpoint breakpoint = make_breakpoint(pc);
+        const Breakpoint *previous = hashmap_get(dbg->breakpoints, &breakpoint);
+        if (previous && previous->enabled) {
+            if ((res = step_over_breakpoint(dbg)) < 0) {
+                break;
+            }
+        } else {
+            if (res = single_step(dbg)) {
+                break;
+            }
 
-        int status, option = 0;
-        if (res = wait_for_signal(dbg, &status, option)) {
-            fprintf(stderr, "Error on wait_for_signal: %s\n",
-                    get_waitpid_err(res)); // cmdline
-            break;
+            int status, option = 0;
+            if (res = wait_for_signal(dbg, &status, option)) {
+                fprintf(stderr, "Error on wait_for_signal: %s\n",
+                        get_waitpid_err(res)); // cmdline
+                break;
+            }
         }
     }
     if (res) return -1;
