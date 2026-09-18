@@ -69,13 +69,13 @@ int handle_breakpoint(Debugger *dbg, Buffer *buffer);
 
 // enable_breakpoint enables the breakpoint at the specified memory address
 // If no such breakpoint exists, it is created.
-// Returns 0 if breakpoint is successfully enabled; returns 1 if breakpoint was
-// already enabled.
+// Returns 0 if breakpoint is successfully enabled or if breakpoint was already
+// enabled.
 int enable_breakpoint(Debugger *dbg, WORD mem_addr);
 
 // disable_breakpoint disables the breakpoint at the specified memory address.
-// Returns 0 if breakpoint is successfully disabled; returns 1 if breakpoint was
-// already disabled or didnt exist.
+// Returns 0 if breakpoint is successfully disabled or if breakpoint was already
+// disabled or didnt exist.
 int disable_breakpoint(Debugger *dbg, WORD mem_addr);
 
 // WORDCmp returns the equivalence of two WORDS.
@@ -129,7 +129,7 @@ int single_step(Debugger *dbg);
 // step_over_breakpoint steps over the current breakpoint IF EXISTS.
 // Disables breakpoint -> Rewinds PC to breakpoint -> Steps over once -> Enables
 // breakpoint.
-// Returns 0 on success or if breakpoint doesn't exist, < 0 on error.
+// Returns 0 on success, 1 if breakpoint doesn't exist, and < 0 on error.
 int step_over_breakpoint(Debugger *dbg);
 
 // handle_step handles a step over command.

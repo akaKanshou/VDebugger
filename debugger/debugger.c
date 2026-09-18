@@ -199,7 +199,7 @@ Breakpoint make_breakpoint(WORD memAddr) {
 int enable_breakpoint(Debugger *dbg, WORD memAddr) {
     Breakpoint breakpoint = make_breakpoint(memAddr);
     const Breakpoint *previous = hashmap_get(dbg->breakpoints, &breakpoint);
-    if (previous && previous->enabled == true) return 1;
+    if (previous && previous->enabled == true) return 0;
 
     WORD data = ptrace(PTRACE_PEEKDATA, dbg->c_pid, memAddr, NULL);
     breakpoint.saved_data = data;
@@ -215,7 +215,7 @@ int enable_breakpoint(Debugger *dbg, WORD memAddr) {
 int disable_breakpoint(Debugger *dbg, WORD memAddr) {
     Breakpoint breakpoint = make_breakpoint(memAddr);
     const Breakpoint *previous = hashmap_get(dbg->breakpoints, &breakpoint);
-    if (!previous || previous->enabled == false) return 1;
+    if (!previous || previous->enabled == false) return 0;
 
     ptrace(PTRACE_POKEDATA, dbg->c_pid, memAddr, previous->saved_data, NULL);
 
