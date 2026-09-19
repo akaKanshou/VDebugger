@@ -360,6 +360,14 @@ int get_addr_from_source_line(const char *source_file_name,
             continue;
         }
 
+        Dwarf_Unsigned line_no;
+        res = dwarf_lineno(line_buf[i], &line_no, error);
+        if (res == DW_DLV_ERROR) {
+            return res;
+        } else if (line_no < line_num) {
+            continue;
+        }
+
         res = dwarf_lineaddr(line_buf[i], line_addr, error);
 
         dwarf_dealloc_die(cu_die);
