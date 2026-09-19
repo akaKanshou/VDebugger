@@ -125,6 +125,10 @@ COMMAND match_command(char *buffer) {
         return WHERE;
     }
 
+    if (!strcmp(buffer, "finish")) {
+        return FINISH;
+    }
+
     return INVALID_CMD;
 }
 

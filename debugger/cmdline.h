@@ -17,6 +17,7 @@ typedef enum COMMAND {
     EXIT,
     STEP,
     WHERE,
+    FINISH,
 
     NUM_CMDS,
     INVALID_CMD,

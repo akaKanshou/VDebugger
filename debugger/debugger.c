@@ -52,7 +52,7 @@ int wait_for_signal(Debugger *dbg, int *status, int options) {
         handle_sigtrap(dbg, &info);
         break;
     default:
-        fprintf(stdout, "\nUnhandled signal: %i\n", info.si_code);
+        fprintf(stdout, "\nUnhandled signal: %x\n", info.si_code);
     }
 
     return 0;
@@ -160,6 +160,8 @@ int handle_command(Debugger *dbg, COMMAND cmnd, Buffer *buffer) {
         return handle_step(dbg, buffer);
     case WHERE:
         return handle_where(dbg, buffer);
+    case FINISH:
+        return step_out(dbg);
     default:
         fprintf(stdout, "Unknown command"); // cmdline
         return 0;
@@ -463,6 +465,41 @@ int handle_step(Debugger *dbg, Buffer *buffer) {
         }
     }
     if (res) return -1;
+    return 0;
+}
+
+// =======================================
+
+// =======================================
+// NEXT
+// =======================================
+
+// =======================================
+
+// =======================================
+// FINISH
+// =======================================
+
+int step_out(Debugger *dbg) {
+    UWORD frame_pointer;
+    get_reg_value(dbg, rbp, &frame_pointer);
+    UWORD return_addr =
+        ptrace(PTRACE_PEEKDATA, dbg->c_pid, frame_pointer + 8, NULL);
+
+    Breakpoint breakpoint = make_breakpoint(return_addr);
+    const Breakpoint *previous = hashmap_get(dbg->breakpoints, &breakpoint);
+
+    enable_breakpoint(dbg, return_addr);
+
+    int res = debug_continue(dbg);
+    if (res) {
+        return res;
+    }
+
+    if (previous == NULL || !previous->enabled) {
+        disable_breakpoint(dbg, return_addr);
+    }
+
     return 0;
 }
 
