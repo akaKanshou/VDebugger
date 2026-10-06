@@ -26,23 +26,32 @@ typedef struct Debugger {
 
 // new_debugger returns a pointer to a Debugger initialized with the process id
 // of the specified child process.
-Debugger *new_debugger(int c_pid, char *file);
+// Returns 0 on success
+// Returns > 0 on error
+int new_debugger(int c_pid, char *file, Debugger **__dbg);
 
 // free_debugger frees the Debugger struct.
 void free_debugger(Debugger *dbg);
 
 // run_debugger waits for the debugee to start and initializes the REPL loop.
+// Returns 0 on success
+// Returns > 0 on error
 int run_debugger(Debugger *dbg);
 
 // get_load_address queries /proc/<c_pid>/maps for the memory address offset of
 // the debugee. popen is called.
-WORD get_load_address(int c_pid);
+// Returns 0 on success
+// Returns > 0 on error
+int get_load_address(int c_pid, WORD *load_addr);
 
 // Wrapper for waitpid.
-// TODO: Error handling.
+// Returns 0 on success
+// Returns > 0 on error. Check errno
 int wait_for_signal(Debugger *dbg, int *status, int options);
 
 // Populate a siginfo_t about the information about a waitpid call.
+// Returns 0 on success
+// Returns > 0 on error
 int get_siginfo(Debugger *dbg, siginfo_t *info);
 
 // Handle a SIGTRAP si_code
@@ -50,11 +59,12 @@ int handle_sigtrap(Debugger *dbg, siginfo_t *info);
 
 // handle_command calls the approriate handler for specified command.
 // Returns 0 on success, 1 if debugger should terminate and, < 0 on failure.
-int handle_command(Debugger *dbg, COMMAND cmnd, Buffer *buffer);
+int handle_command(Debugger *dbg, COMMAND cmnd, Buffer *buffer,
+                   int *debugee_terminated);
 
 // debug_continue continues the paused debugee.
 // Returns 0 on success, 1 on debugee terminating and, < 0 on failure.
-int debug_continue(Debugger *dbg);
+int debug_continue(Debugger *dbg, int *debugee_terminated);
 
 // =======================================
 // BREAKPOINT
@@ -69,7 +79,12 @@ typedef struct Breakpoint {
 
 // make_breakpoint returns a breakpoint struct initialized with the
 // specified memory address offset.
-Breakpoint make_breakpoint(WORD memAddrOffset);
+Breakpoint *make_breakpoint(WORD memAddrOffset);
+
+int copy_breakpoint(Breakpoint *dest, const Breakpoint *src);
+
+int get_breakpoint_at_addr(Debugger *dbg, WORD memAddr,
+                           Breakpoint **breakpoint);
 
 // handle_breakpoint handles a breakpoint command.
 // Returns 0 on success and < 0 on error.
@@ -81,12 +96,12 @@ int handle_breakpoint(Debugger *dbg, Buffer *buffer);
 // If no such breakpoint exists, it is created.
 // Returns 0 if breakpoint is successfully enabled or if breakpoint was already
 // enabled.
-int enable_breakpoint(Debugger *dbg, WORD mem_addr);
+int enable_breakpoint(Debugger *dbg, Breakpoint *breakpoint);
 
 // disable_breakpoint disables the breakpoint at the specified memory address.
 // Returns 0 if breakpoint is successfully disabled or if breakpoint was already
 // disabled or didnt exist.
-int disable_breakpoint(Debugger *dbg, WORD mem_addr);
+int disable_breakpoint(Debugger *dbg, Breakpoint *breakpoint);
 
 // WORDCmp returns the equivalence of two WORDS.
 int breakpoint_cmp(const void *a, const void *b, void *udata);
