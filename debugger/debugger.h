@@ -95,6 +95,8 @@ int copy_breakpoint(Breakpoint *dest, const Breakpoint *src);
 int get_breakpoint_at_addr(Debugger *dbg, WORD memAddr,
                            Breakpoint **breakpoint);
 
+int save_breakpoint(Debugger *dbg, Breakpoint *breakpoint);
+
 // handle_breakpoint handles a breakpoint command.
 // Returns 0 on success and < 0 on error.
 // Command syntax:

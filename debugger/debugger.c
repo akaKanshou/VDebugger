@@ -256,13 +256,13 @@ int handle_breakpoint(Debugger *dbg, Buffer *buffer) {
     int res;
     Breakpoint *breakpoint;
     res = get_breakpoint_at_addr(dbg, arg, &breakpoint);
-    if (res) {
-        return res;
-    }
+    if (res && res != KEY_NOT_EXISTS) return res;
 
     switch (action) {
     case ENABLE_BREAKPOINT:
         res = enable_breakpoint(dbg, breakpoint);
+        if (res) return 1;
+        res = save_breakpoint(dbg, breakpoint);
         break;
     case DISABLE_BREAKPOINT:
         res = disable_breakpoint(dbg, breakpoint);
@@ -298,9 +298,13 @@ int get_breakpoint_at_addr(Debugger *dbg, WORD memAddr,
     if (!breakpoint) return 1;
     const Breakpoint *bp_in_map = hashmap_get(dbg->breakpoints, *breakpoint);
     if (copy_breakpoint(*breakpoint, bp_in_map)) {
-        free(*breakpoint);
-        *breakpoint = NULL;
+        return KEY_NOT_EXISTS;
     }
+    return 0;
+}
+
+int save_breakpoint(Debugger *dbg, Breakpoint *breakpoint) {
+    hashmap_set(dbg->breakpoints, breakpoint);
     return 0;
 }
 
@@ -573,28 +577,39 @@ int step_out(Debugger *dbg) {
 
     Breakpoint *breakpoint;
     res = get_breakpoint_at_addr(dbg, return_addr, &breakpoint);
-    if (res) {
-        return res;
-    }
+    if (res && res != KEY_NOT_EXISTS) return res;
 
-    int temp = !breakpoint || !breakpoint->enabled;
-    if (!breakpoint) {
-        breakpoint = make_breakpoint(return_addr);
-    }
+    int temp = res == KEY_NOT_EXISTS || !breakpoint->enabled;
 
     enable_breakpoint(dbg, breakpoint);
 
+    res = step_over_breakpoint(dbg);
+    if (res) {
+        free(breakpoint);
+        return res;
+    }
+
     res = debug_continue(dbg);
-    if (res) return res;
+    if (res) {
+        free(breakpoint);
+        return res;
+    }
 
     res = wait_and_handle_signal(dbg);
-    if (res) return res;
+    if (res) {
+        free(breakpoint);
+        return res;
+    }
 
     if (temp) {
         res = disable_breakpoint(dbg, breakpoint);
-        if (res) return res;
+        if (res) {
+            free(breakpoint);
+            return res;
+        }
     }
 
+    free(breakpoint);
     return 0;
 }
 
