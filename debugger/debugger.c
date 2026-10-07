@@ -15,16 +15,19 @@
 // TODO: Move all printing to seperate library
 // TODO: Error handling ptrace and waitpid calls.
 // TODO: Change all variables to snake_case
+// TODO: ESRCH on successful termination - fix it
 
-Debugger *new_debugger(int c_pid, char *file) {
+int new_debugger(int c_pid, char *file, Debugger **__dbg) {
     Debugger *dbg = (Debugger *)malloc(sizeof(Debugger));
     dbg->c_pid = c_pid;
     dbg->breakpoints = hashmap_new(sizeof(Breakpoint), 0, 0, 0, breakpoint_hash,
                                    breakpoint_cmp, NULL, NULL);
-    dbg->load_address = get_load_address(c_pid);
-    int res = init_dwarf(file, &dbg->dwarf_dbg);
-    if (!dbg->load_address || res) return NULL;
-    return dbg;
+    int res = get_load_address(c_pid, &dbg->load_address);
+    if (res) return res;
+    res = init_dwarf(file, &dbg->dwarf_dbg);
+    if (res) return res;
+    *__dbg = dbg;
+    return 0;
 }
 
 void free_debugger(Debugger *dbg) {
@@ -32,41 +35,68 @@ void free_debugger(Debugger *dbg) {
     free(dbg);
 }
 
-WORD get_load_address(int c_pid) {
+int get_load_address(int c_pid, WORD *load_addr) {
     char sysCall[64], memOffsetHex[64];
     sprintf(sysCall, "cat /proc/%i/maps | head -c 16", c_pid);
     FILE *fpipe = popen(sysCall, "r");
-    if (!fpipe) return 0ll;
-    if (fgets(memOffsetHex, 64, fpipe) == NULL) return 0ll;
-    return strtoll(memOffsetHex, NULL, 16);
+    if (!fpipe) return 1;
+    if (fgets(memOffsetHex, 64, fpipe) == NULL) return 1;
+    *load_addr = strtoll(memOffsetHex, NULL, 16);
+    return 0;
 }
 
 int wait_for_signal(Debugger *dbg, int *status, int options) {
     errno = 0;
-    if (waitpid(dbg->c_pid, status, options) == -1) return errno;
+    if (waitpid(dbg->c_pid, status, options) == -1) return WAIT_PID_ERROR;
 
-    siginfo_t info;
-    get_siginfo(dbg, &info);
-    switch (info.si_signo) {
-    case SIGTRAP:
-        handle_sigtrap(dbg, &info);
-        break;
-    default:
-        fprintf(stdout, "\nUnhandled signal: %x\n", info.si_code);
-    }
+    if (debugee_terminated(*status)) return DEBUGEE_EXITED;
 
     return 0;
 }
 
+int wait_and_handle_signal(Debugger *dbg) {
+    int status, options = 0, res;
+    res = wait_for_signal(dbg, &status, options);
+    if (res) return res;
+
+    siginfo_t info;
+    res = get_siginfo(dbg, &info);
+    if (res) return res;
+
+    switch (info.si_signo) {
+    case SIGTRAP:
+        res = handle_sigtrap(dbg, &info);
+        break;
+    default:
+        res = -1;
+        fprintf(stdout, "\nUnhandled signal: %x\n", info.si_code);
+        break;
+    }
+
+    return res;
+}
+
+int debugee_terminated(int status) {
+    if (WIFEXITED(status) || WIFSIGNALED(status)) {
+        return 1;
+    }
+    return 0;
+}
+
 int handle_sigtrap(Debugger *dbg, siginfo_t *info) {
+    int res = 0;
     switch (info->si_code) {
     case SI_KERNEL:
     case TRAP_BRKPT:
         regs_struct regs;
-        get_regs_struct(dbg, &regs);
-        UWORD *pc = get_register(&regs, rip);
+        res = get_regs_struct(dbg, &regs);
+        if (res) return res;
+
+        UWORD *pc = get_register(&regs, rip); // TODO: change io
         *pc = *pc - 1;
-        set_regs_struct(dbg, &regs);
+
+        res = set_regs_struct(dbg, &regs);
+        if (res) return res;
         break;
     case TRAP_TRACE:
     }
@@ -74,27 +104,35 @@ int handle_sigtrap(Debugger *dbg, siginfo_t *info) {
 }
 
 int get_siginfo(Debugger *dbg, siginfo_t *info) {
-    errno = 0;
-    ptrace(PTRACE_GETSIGINFO, dbg->c_pid, NULL, info);
-    return errno;
+    if (ptrace(PTRACE_GETSIGINFO, dbg->c_pid, NULL, info) == -1) {
+        return PTRACE_ERROR;
+    }
+    return 0;
 }
 
-int run_debugger(Debugger *dbg) {
+int run_debugger(Debugger *dbg) { // application
     if (dbg == NULL) {
-        return -1;
-    }
-
-    int status, options = 0, err;
-    if (err = wait_for_signal(dbg, &status, options)) {
-        fprintf(stderr, "Error on wait_for_signal: %s\n",
-                get_waitpid_err(err)); // cmdline
-        return -1;
+        return 1;
     }
 
     int res;
+    res = wait_and_handle_signal(dbg);
+    if (res == WAIT_PID_ERROR) {
+        fprintf(stderr, "Error %i on wait_for_signal: %s\n", errno,
+                get_waitpid_err(errno)); // cmdline
+        return res;
+    } else if (res == PTRACE_ERROR) {
+        fprintf(stderr, "Error %i on ptrace: %s\n", errno,
+                get_ptrace_err(errno)); // cmdline
+        return res;
+    } else if (res) {
+        fprintf(stdout, "Failed to start main loop: %i", res);
+        return res;
+    }
+
     COMMAND cmnd;
     Buffer *buffer = new_buffer(CMD_MAX_SIZE), *line = new_buffer(0);
-    while (cmnd != EXIT && poll_input(line)) {
+    while (res != DEBUGEE_EXITED && cmnd != EXIT && poll_input(line)) {
         while (res = parse_input(buffer, line)) {
             if (res < 0) {
                 cmnd = INVALID_CMD;
@@ -107,21 +145,21 @@ int run_debugger(Debugger *dbg) {
                 break;
             }
 
-            int res = handle_command(dbg, cmnd, buffer);
-            if (!res) {
+            res = handle_command(dbg, cmnd, buffer);
+            if (!res || res == DEBUGEE_EXITED) {
                 fprintf(stdout, "\nOK\n"); // cmdline
-            } else if (res < 0) {
-                fprintf(stdout, "\n!x!\n"); // cmdline
             } else {
-                fprintf(stdout, "Debugee terminated\n"); // cndline
-                return 0;
+                fprintf(stdout, "\n!x!\n"); // cmdline
             }
+
+            if (res == DEBUGEE_EXITED) break;
             reset_seek(buffer);
         }
 
         linenoiseFree(line->data);
         reset_seek(line);
     }
+    fprintf(stdout, "Debugee terminated\n"); // cndline
 
     free(buffer->data);
     free(buffer);
@@ -130,131 +168,173 @@ int run_debugger(Debugger *dbg) {
 }
 
 int debug_continue(Debugger *dbg) {
-    step_over_breakpoint(dbg);
-
-    ptrace(PTRACE_CONT, dbg->c_pid, NULL, NULL);
-
-    int status, options = 0, err;
-    if (err = wait_for_signal(dbg, &status, options)) {
-        fprintf(stderr, "Error on wait_for_signal: %s\n",
-                get_waitpid_err(err)); // cmdline
-        return -1;
+    if (ptrace(PTRACE_CONT, dbg->c_pid, NULL, NULL) == -1) {
+        return PTRACE_ERROR;
     }
-
-    if (WIFEXITED(status) || WIFSIGNALED(status)) {
-        return 1;
-    }
-
     return 0;
 }
 
 int handle_command(Debugger *dbg, COMMAND cmnd, Buffer *buffer) {
+    int res = 0;
     switch (cmnd) {
     case CONTINUE:
-        return debug_continue(dbg);
+        res = step_over_breakpoint(dbg);
+        if (res) return res;
+        res = debug_continue(dbg);
+        if (res) return res;
+        res = wait_and_handle_signal(dbg);
+        if (res) return res;
+        break;
+
     case BREAKPOINT:
-        return handle_breakpoint(dbg, buffer);
+        res = handle_breakpoint(dbg, buffer);
+        break;
     case REG:
-        return handle_register(dbg, buffer);
+        res = handle_register(dbg, buffer);
+        break;
     case STEP:
-        return handle_step(dbg, buffer);
+        res = handle_step(dbg, buffer);
+        break;
     case WHERE:
-        return handle_where(dbg, buffer);
+        res = handle_where(dbg, buffer);
+        break;
     case FINISH:
-        return step_out(dbg);
+        res = step_out(dbg);
+        break;
     default:
         fprintf(stdout, "Unknown command"); // cmdline
-        return 0;
+        return 1;
     }
 
-    fprintf(stderr, "Unreachable state in handle_command"); // cmdline
-    return -1;
+    return res;
 }
 
 // =======================================
 // BREAKPOINT
 // =======================================
 
+// TODO: application functions need serious refactoring and break down
 int handle_breakpoint(Debugger *dbg, Buffer *buffer) {
     BREAKPOINT_OPTIONS action = match_breakpoint_option(next_token(buffer)),
                        mode = match_breakpoint_option(next_token(buffer));
     if (action == INVALID_BREAKPOINT_OPT || mode == INVALID_BREAKPOINT_OPT)
-        return -1;
+        return 1;
 
     char *argToken = next_token(buffer), *argEnd;
-    if (!argToken) return -1;
+    if (!argToken) return 1;
 
     WORD arg;
     switch (mode) {
     case BREAKPOINT_ARG_MEMADDR:
         arg = strtoll(argToken, &argEnd, 16);
-        if (*argEnd) return -1;
+        if (*argEnd) return INVALID_COMMAND;
         break;
     case BREAKPOINT_ARG_LINENUM:
         char *file_name = argToken;
         argToken = next_token(buffer);
         arg = strtoll(argToken, &argEnd, 10);
-        if (*argEnd) return -1;
+        if (*argEnd) return INVALID_COMMAND;
         Dwarf_Addr addr;
         Dwarf_Error error;
         int res = get_addr_from_source_line(file_name, arg, dbg->dwarf_dbg,
                                             &addr, &error);
         if (res == DW_DLV_ERROR) {
             fprintf(stdout, "error:%s\n", dwarf_errmsg(error));
-            return -1;
+            return 1;
         } else if (res != DW_DLV_OK) {
             fprintf(stdout, "noentry\n");
-            return -1;
+            return 1;
         }
 
         arg = addr;
         break;
     default:
-        return -2;
+        return INVALID_COMMAND;
     }
     arg += dbg->load_address;
 
+    int res;
+    Breakpoint *breakpoint;
+    res = get_breakpoint_at_addr(dbg, arg, &breakpoint);
+    if (res && res != KEY_NOT_EXISTS) return res;
+
     switch (action) {
     case ENABLE_BREAKPOINT:
-        return enable_breakpoint(dbg, arg);
+        res = enable_breakpoint(dbg, breakpoint);
+        if (res) return 1;
+        res = save_breakpoint(dbg, breakpoint);
+        break;
     case DISABLE_BREAKPOINT:
-        return disable_breakpoint(dbg, arg);
+        res = disable_breakpoint(dbg, breakpoint);
+        break;
     }
 
-    return -1;
+    free(breakpoint);
+    return res;
 }
 
-Breakpoint make_breakpoint(WORD memAddr) {
-    Breakpoint breakpoint = {
-        .mem_addr = memAddr, .saved_data = 0, .enabled = false};
+Breakpoint *make_breakpoint(WORD memAddr) {
+    Breakpoint *breakpoint = (Breakpoint *)malloc(sizeof(Breakpoint));
+    if (!breakpoint) return NULL;
+
+    breakpoint->mem_addr = memAddr;
+    breakpoint->saved_data = 0;
+    breakpoint->enabled = false;
     return breakpoint;
 }
 
-int enable_breakpoint(Debugger *dbg, WORD memAddr) {
-    Breakpoint breakpoint = make_breakpoint(memAddr);
-    const Breakpoint *previous = hashmap_get(dbg->breakpoints, &breakpoint);
-    if (previous && previous->enabled == true) return 0;
+int copy_breakpoint(Breakpoint *dest, const Breakpoint *src) {
+    if (src == NULL) return 1;
+    dest->enabled = src->enabled;
+    dest->mem_addr = src->mem_addr;
+    dest->saved_data = src->saved_data;
+    dest->setKey = dest->setKey;
+}
 
-    WORD data = ptrace(PTRACE_PEEKDATA, dbg->c_pid, memAddr, NULL);
-    breakpoint.saved_data = data;
-
-    data = (data & ~0xff) | 0xcc;
-    ptrace(PTRACE_POKEDATA, dbg->c_pid, memAddr, data, NULL);
-
-    breakpoint.enabled = true;
-    hashmap_set(dbg->breakpoints, &breakpoint);
+// TODO: free allocated breakpoints at every point
+int get_breakpoint_at_addr(Debugger *dbg, WORD memAddr,
+                           Breakpoint **breakpoint) {
+    *breakpoint = make_breakpoint(memAddr);
+    if (!breakpoint) return 1;
+    const Breakpoint *bp_in_map = hashmap_get(dbg->breakpoints, *breakpoint);
+    if (copy_breakpoint(*breakpoint, bp_in_map)) {
+        return KEY_NOT_EXISTS;
+    }
     return 0;
 }
 
-int disable_breakpoint(Debugger *dbg, WORD memAddr) {
-    Breakpoint breakpoint = make_breakpoint(memAddr);
-    const Breakpoint *previous = hashmap_get(dbg->breakpoints, &breakpoint);
-    if (!previous || previous->enabled == false) return 0;
+int save_breakpoint(Debugger *dbg, Breakpoint *breakpoint) {
+    hashmap_set(dbg->breakpoints, breakpoint);
+    return 0;
+}
 
-    ptrace(PTRACE_POKEDATA, dbg->c_pid, memAddr, previous->saved_data, NULL);
+int enable_breakpoint(Debugger *dbg, Breakpoint *breakpoint) {
+    errno = 0;
+    WORD data = ptrace(PTRACE_PEEKDATA, dbg->c_pid, breakpoint->mem_addr, NULL);
+    if (data == -1 && errno) {
+        return PTRACE_ERROR;
+    }
 
-    breakpoint.enabled = false;
-    hashmap_set(dbg->breakpoints, &breakpoint);
+    breakpoint->saved_data = data;
+
+    data = (data & ~0xff) | 0xcc;
+
+    if (ptrace(PTRACE_POKEDATA, dbg->c_pid, breakpoint->mem_addr, data, NULL) ==
+        -1) {
+        return PTRACE_ERROR;
+    }
+
+    breakpoint->enabled = true;
+    return 0;
+}
+
+int disable_breakpoint(Debugger *dbg, Breakpoint *breakpoint) {
+    if (ptrace(PTRACE_POKEDATA, dbg->c_pid, breakpoint->mem_addr,
+               breakpoint->saved_data, NULL) == -1) {
+        return PTRACE_ERROR;
+    }
+
+    breakpoint->enabled = false;
     return 0;
 }
 
@@ -282,7 +362,7 @@ int handle_register(Debugger *dbg, Buffer *buffer) {
                      mode = match_register_option(next_token(buffer));
 
     if (action == INVALID_REGISTER_OPT || mode == INVALID_REGISTER_OPT) {
-        return -1;
+        return 1;
     }
 
     char *arg = next_token(buffer);
@@ -290,57 +370,56 @@ int handle_register(Debugger *dbg, Buffer *buffer) {
 
     regs_struct regs;
     REGISTER reg;
-    if (res = get_regs_struct(dbg, &regs)) {
-        return res;
-    }
+    res = get_regs_struct(dbg, &regs);
+    if (res) return res;
 
     switch (action) {
     case READ_REGISTER:
         if (mode == REGISTER_ARG_ALL) {
             if (arg) {
                 fprintf(stdout, "invalid arg %s\n", arg);
-                return -1;
+                return INVALID_COMMAND;
             }
 
             print_registers(&regs);
             return 0;
         }
 
-        if (!arg) return -1;
+        if (!arg) return INVALID_COMMAND;
 
         if (mode == REGISTER_ARG_ABBR) {
             reg = abbr_to_reg(arg);
         } else if (mode == REGISTER_ARG_DWARF) {
             int dwarfn = strtol(arg, &arg, 16);
             if (arg + 1 < buffer->data + buffer->rseek) {
-                return -1;
+                return INVALID_COMMAND;
             }
             reg = DW_to_reg(dwarfn);
         }
-        if (reg == NO_SUCH_REGISTER) return -1;
+        if (reg == NO_SUCH_REGISTER) return 1;
 
         fprintf(stdout, "value :%llx\n", *get_register(&regs, reg)); // cmdline
 
         return 0;
     case WRITE_REGISTER:
-        if (!arg) return -1;
+        if (!arg) return INVALID_COMMAND;
 
         if (mode == REGISTER_ARG_ABBR) {
             reg = abbr_to_reg(arg);
         } else if (mode == REGISTER_ARG_DWARF) {
             int dwarfn = strtol(arg, &arg, 10);
             if (arg + 1 < buffer->data + buffer->rseek) {
-                return -1;
+                return INVALID_COMMAND;
             }
             reg = DW_to_reg(dwarfn);
         }
-        if (reg == NO_SUCH_REGISTER) return -1;
+        if (reg == NO_SUCH_REGISTER) return 1;
 
         arg = next_token(buffer);
-        if (!arg) return -1;
+        if (!arg) return INVALID_COMMAND;
         WORD value = strtoll(arg, &arg, 10);
         if (arg + 1 < buffer->data + buffer->rseek) {
-            return -1;
+            return INVALID_COMMAND;
         }
 
         set_reg_value(dbg, reg, value);
@@ -348,16 +427,20 @@ int handle_register(Debugger *dbg, Buffer *buffer) {
         return 0;
     }
 
-    return -1;
+    return INVALID_COMMAND;
 }
 
 int get_regs_struct(Debugger *dbg, regs_struct *regs) {
-    ptrace(PTRACE_GETREGS, dbg->c_pid, NULL, regs);
+    if (ptrace(PTRACE_GETREGS, dbg->c_pid, NULL, regs) == -1) {
+        return PTRACE_ERROR;
+    }
     return 0;
 }
 
 int set_regs_struct(Debugger *dbg, regs_struct *regs) {
-    ptrace(PTRACE_SETREGS, dbg->c_pid, NULL, regs);
+    if (ptrace(PTRACE_SETREGS, dbg->c_pid, NULL, regs) == -1) {
+        return PTRACE_ERROR;
+    }
     return 0;
 }
 
@@ -365,7 +448,7 @@ int get_reg_value(Debugger *dbg, REGISTER reg, WORD *value) {
     int res;
 
     regs_struct regs;
-    if (res = get_regs_struct(dbg, &regs)) return res;
+    if ((res = get_regs_struct(dbg, &regs)) > 0) return res;
 
     UWORD *regl = get_register(&regs, reg);
     if (!regl) return NO_SUCH_REGISTER;
@@ -396,59 +479,62 @@ int set_reg_value(Debugger *dbg, REGISTER reg, WORD value) {
 // =======================================
 
 int single_step(Debugger *dbg) {
-    errno = 0;
     if (ptrace(PTRACE_SINGLESTEP, dbg->c_pid, NULL, NULL) == -1) {
-        fprintf(stderr, "Error Single-Stepping: %s\n", get_ptrace_err(errno));
-        return errno;
+        return PTRACE_ERROR;
     }
     return 0;
 }
 
 int step_over_breakpoint(Debugger *dbg) {
+    int res;
     regs_struct regs;
     get_regs_struct(dbg, &regs);
 
     UWORD *program_counter = get_register(&regs, rip);
 
-    Breakpoint key = make_breakpoint(*program_counter);
-    const Breakpoint *breakpoint = hashmap_get(dbg->breakpoints, &key);
+    Breakpoint *breakpoint;
+    res = get_breakpoint_at_addr(dbg, *program_counter, &breakpoint);
+    if (res) {
+        return res;
+    }
     if (!breakpoint || !breakpoint->enabled) {
         // No breakpoint to step over, or is not enabled.
         return 0;
     }
 
-    disable_breakpoint(dbg, breakpoint->mem_addr); // Disable
-    int res = single_step(dbg);                    // Single step
-    if (res < 0) {
-        return -1;
-    }
+    res = disable_breakpoint(dbg, breakpoint); // Disable
+    if (res) return res;
 
-    int status, options = 0;
-    if (res = wait_for_signal(dbg, &status, options)) {
-        fprintf(stderr, "Error on wait_for_signal: %s\n",
-                get_waitpid_err(res)); // cmdline
-        return -1;
-    }
+    res = single_step(dbg); // Single step
+    if (res) return res;
 
-    enable_breakpoint(dbg, breakpoint->mem_addr); // Enable breakpoint
+    res = wait_and_handle_signal(dbg);
+    if (res) return res;
+
+    res = enable_breakpoint(dbg, breakpoint); // Enable breakpoint
+    if (res) return res;
+
     return 0;
 }
 
 int handle_step(Debugger *dbg, Buffer *buffer) {
     char *arg = next_token(buffer);
-    if (!arg) return -1;
+    if (!arg) return 1;
 
     WORD times = strtoll(arg, &arg, 10);
-    if (arg + 1 < buffer->data + buffer->rseek) return -1;
+    if (arg + 1 < buffer->data + buffer->rseek) return 1;
 
     int res = 0;
     while (times--) {
         UWORD pc;
         get_reg_value(dbg, rip, &pc);
-        Breakpoint breakpoint = make_breakpoint(pc);
-        const Breakpoint *previous = hashmap_get(dbg->breakpoints, &breakpoint);
-        if (previous && previous->enabled) {
-            if ((res = step_over_breakpoint(dbg)) < 0) {
+        Breakpoint *breakpoint;
+        res = get_breakpoint_at_addr(dbg, pc, &breakpoint);
+        if (res) {
+            return res;
+        }
+        if (breakpoint && breakpoint->enabled) {
+            if (res = step_over_breakpoint(dbg)) {
                 break;
             }
         } else {
@@ -456,15 +542,11 @@ int handle_step(Debugger *dbg, Buffer *buffer) {
                 break;
             }
 
-            int status, option = 0;
-            if (res = wait_for_signal(dbg, &status, option)) {
-                fprintf(stderr, "Error on wait_for_signal: %s\n",
-                        get_waitpid_err(res)); // cmdline
-                break;
-            }
+            res = wait_and_handle_signal(dbg);
+            if (res) return res;
         }
     }
-    if (res) return -1;
+    if (res) return res;
     return 0;
 }
 
@@ -481,25 +563,53 @@ int handle_step(Debugger *dbg, Buffer *buffer) {
 // =======================================
 
 int step_out(Debugger *dbg) {
+    int res;
     UWORD frame_pointer;
-    get_reg_value(dbg, rbp, &frame_pointer);
+    res = get_reg_value(dbg, rbp, &frame_pointer);
+    if (res) return res;
+
+    errno = 0;
     UWORD return_addr =
         ptrace(PTRACE_PEEKDATA, dbg->c_pid, frame_pointer + 8, NULL);
+    if (return_addr == -1 && errno) {
+        return PTRACE_ERROR;
+    }
 
-    Breakpoint breakpoint = make_breakpoint(return_addr);
-    const Breakpoint *previous = hashmap_get(dbg->breakpoints, &breakpoint);
+    Breakpoint *breakpoint;
+    res = get_breakpoint_at_addr(dbg, return_addr, &breakpoint);
+    if (res && res != KEY_NOT_EXISTS) return res;
 
-    enable_breakpoint(dbg, return_addr);
+    int temp = res == KEY_NOT_EXISTS || !breakpoint->enabled;
 
-    int res = debug_continue(dbg);
+    enable_breakpoint(dbg, breakpoint);
+
+    res = step_over_breakpoint(dbg);
     if (res) {
+        free(breakpoint);
         return res;
     }
 
-    if (previous == NULL || !previous->enabled) {
-        disable_breakpoint(dbg, return_addr);
+    res = debug_continue(dbg);
+    if (res) {
+        free(breakpoint);
+        return res;
     }
 
+    res = wait_and_handle_signal(dbg);
+    if (res) {
+        free(breakpoint);
+        return res;
+    }
+
+    if (temp) {
+        res = disable_breakpoint(dbg, breakpoint);
+        if (res) {
+            free(breakpoint);
+            return res;
+        }
+    }
+
+    free(breakpoint);
     return 0;
 }
 
@@ -511,14 +621,14 @@ int step_out(Debugger *dbg) {
 
 int handle_where(Debugger *dbg, Buffer *buffer) {
     char *arg = next_token(buffer);
-    if (!arg) return -1;
+    if (!arg) return 1;
 
     WHERE_OPTIONS mode = match_where_option(arg);
-    int res;
+    int res = 0;
 
     WORD pc;
     res = get_reg_value(dbg, rip, &pc);
-    if (res < 0) return res;
+    if (res) return res;
 
     Dwarf_Error error;
 
@@ -538,7 +648,7 @@ int handle_where(Debugger *dbg, Buffer *buffer) {
         if (res == DW_DLV_ERROR) {
             fprintf(stderr, "error: %s\n", dwarf_errmsg(error));
             dwarf_dealloc_error(dbg->dwarf_dbg, error);
-            return -1;
+            return 1;
         }
 
         char *func_name;
@@ -549,7 +659,7 @@ int handle_where(Debugger *dbg, Buffer *buffer) {
         if (res == DW_DLV_ERROR) {
             fprintf(stderr, "error: %s\n", dwarf_errmsg(error));
             dwarf_dealloc_error(dbg->dwarf_dbg, error);
-            return -1;
+            return 1;
         } else if (res == DW_DLV_NO_ENTRY) {
             fprintf(stdout, "Unknown name :(\n");
             return 0;
@@ -564,18 +674,16 @@ int handle_where(Debugger *dbg, Buffer *buffer) {
                                     &line_no, &error);
         if (res == DW_DLV_ERROR) {
             fprintf(stdout, "error: %s\n", dwarf_errmsg(error));
-            return -1;
+            return 1;
         } else if (res == DW_DLV_NO_ENTRY) {
-            return -1;
+            return 1;
         }
 
         fprintf(stdout, "Current line: %lli\n", line_no);
         return 0;
     default:
-        return -1;
+        return 1;
     }
-
-    return -1;
 }
 
 // =======================================
