@@ -13,6 +13,14 @@
 
 #include <sys/signal.h>
 
+typedef enum Errors {
+    KEY_NOT_EXISTS,
+    INVALID_COMMAND,
+    WAIT_PID_ERROR,
+    DEBUGEE_EXITED,
+    PTRACE_ERROR,
+} Errors;
+
 typedef long long int WORD;
 
 typedef struct hashmap hashmap;
@@ -59,12 +67,13 @@ int handle_sigtrap(Debugger *dbg, siginfo_t *info);
 
 // handle_command calls the approriate handler for specified command.
 // Returns 0 on success, 1 if debugger should terminate and, < 0 on failure.
-int handle_command(Debugger *dbg, COMMAND cmnd, Buffer *buffer,
-                   int *debugee_terminated);
+int handle_command(Debugger *dbg, COMMAND cmnd, Buffer *buffer);
 
 // debug_continue continues the paused debugee.
 // Returns 0 on success, 1 on debugee terminating and, < 0 on failure.
-int debug_continue(Debugger *dbg, int *debugee_terminated);
+int debug_continue(Debugger *dbg);
+
+int debugee_terminated(int status);
 
 // =======================================
 // BREAKPOINT
