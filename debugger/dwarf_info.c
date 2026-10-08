@@ -451,8 +451,9 @@ int get_line_iterator(Dwarf_Debug dwarf_dbg, Dwarf_Die cu_die,
                       Line_Iterator *line_iterator, Dwarf_Error *error) {
     int res;
 
-    line_iterator->cu_die_attach = line_iterator->line_context =
-        line_iterator->dw_lines = 0;
+    line_iterator->cu_die_attach = 0;
+    line_iterator->line_context = 0;
+    line_iterator->dw_lines = 0;
 
     res = get_line_context(dwarf_dbg, cu_die, &line_iterator->line_context,
                            &line_iterator->table_count, &line_iterator->version,
