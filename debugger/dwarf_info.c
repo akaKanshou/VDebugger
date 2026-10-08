@@ -33,19 +33,13 @@ int init_dwarf(const char *path, Dwarf_Debug *dwarf_dbg) {
     return 0;
 }
 
-int die_contains_addr_offset(WORD addr_offset, Dwarf_Debug dwarf_dbg,
-                             Dwarf_Die die, bool *contains_addr,
+int get_low_high_pc_from_die(Dwarf_Debug dwarf_dbg, Dwarf_Die die,
+                             Dwarf_Addr *low_pc, Dwarf_Addr *high_pc,
                              Dwarf_Error *error) {
-
     int res = 0;
-    Dwarf_Addr low_pc = 0;
-    res = dwarf_lowpc(die, &low_pc, error);
+    *low_pc = 0;
+    res = dwarf_lowpc(die, low_pc, error);
     if (res != DW_DLV_OK) {
-        return res;
-    }
-
-    if (low_pc > addr_offset) {
-        *contains_addr = false;
         return res;
     }
 
@@ -59,10 +53,27 @@ int die_contains_addr_offset(WORD addr_offset, Dwarf_Debug dwarf_dbg,
     }
 
     if (form != DW_FORM_addr && !dwarf_addr_form_is_indexed(form)) {
-        localhighpc += low_pc;
+        localhighpc += *low_pc;
     }
 
-    if (localhighpc <= addr_offset) {
+    *high_pc = localhighpc;
+    return DW_DLV_OK;
+}
+
+int die_contains_addr_offset(WORD addr_offset, Dwarf_Debug dwarf_dbg,
+                             Dwarf_Die die, bool *contains_addr,
+                             Dwarf_Error *error) {
+    int res = 0;
+
+    Dwarf_Addr low_pc, high_pc;
+    res = get_low_high_pc_from_die(dwarf_dbg, die, &low_pc, &high_pc, error);
+
+    if (low_pc > addr_offset) {
+        *contains_addr = false;
+        return res;
+    }
+
+    if (high_pc <= addr_offset) {
         *contains_addr = false;
         return res;
     }
@@ -258,38 +269,26 @@ int get_line_no_from_addr(Dwarf_Unsigned addr_offset, Dwarf_Debug dwarf_dbg,
         return res;
     }
 
-    Dwarf_Signed count = 0;
-    Dwarf_Line_Context line_context = 0;
-    Dwarf_Line *line_buf = 0;
-    Dwarf_Small table_count = 0;
-    Dwarf_Unsigned version = 0;
+    Line_Iterator line_iterator;
 
-    res = get_line_context(dwarf_dbg, cu_die, &line_context, &table_count,
-                           &version, error);
+    res = get_line_iterator(dwarf_dbg, cu_die, &line_iterator, error);
     if (res != DW_DLV_OK) {
         dwarf_dealloc_die(cu_die);
         return res;
     }
 
-    res = get_src_lines_from_context(dwarf_dbg, cu_die, line_context, &line_buf,
-                                     &count, error);
-    if (res != DW_DLV_OK) {
-        dwarf_dealloc_die(cu_die);
-        dwarf_srclines_dealloc_b(line_context);
-        return res;
-    }
+    attach_cu_die(&line_iterator, cu_die);
 
-    Dwarf_Signed low = 0, high = count - 1, mid;
+    Dwarf_Signed low = 0, high = line_iterator.line_count - 1, mid;
 
     Dwarf_Unsigned line_addr;
     while (low <= high) {
         mid = (low + high) / 2;
 
-        res = dwarf_lineaddr(line_buf[mid], &line_addr, error);
+        res = dwarf_lineaddr(line_iterator.dw_lines[mid], &line_addr, error);
 
         if (res != DW_DLV_OK) {
-            dwarf_dealloc_die(cu_die);
-            dwarf_srclines_dealloc_b(line_context);
+            free_line_iterator(&line_iterator);
             return res;
         }
 
@@ -301,14 +300,12 @@ int get_line_no_from_addr(Dwarf_Unsigned addr_offset, Dwarf_Debug dwarf_dbg,
     }
 
     if (high < 0) {
-        dwarf_dealloc_die(cu_die);
-        dwarf_srclines_dealloc_b(line_context);
+        free_line_iterator(&line_iterator);
         return DW_DLV_NO_ENTRY;
     }
 
-    res = dwarf_lineno(line_buf[high], line_no, error);
-    dwarf_dealloc_die(cu_die);
-    dwarf_srclines_dealloc_b(line_context);
+    res = dwarf_lineno(line_iterator.dw_lines[high], line_no, error);
+    free_line_iterator(&line_iterator);
     return res;
 }
 
@@ -324,35 +321,22 @@ int get_addr_from_source_line(const char *source_file_name,
         return res;
     }
 
-    Dwarf_Signed count = 0;
-    Dwarf_Line_Context line_context = 0;
-    Dwarf_Line *line_buf = 0;
-    Dwarf_Small table_count = 0;
-    Dwarf_Unsigned version = 0;
+    Line_Iterator line_iterator;
 
-    res = get_line_context(dwarf_dbg, cu_die, &line_context, &table_count,
-                           &version, error);
-
+    res = get_line_iterator(dwarf_dbg, cu_die, &line_iterator, error);
     if (res != DW_DLV_OK) {
         dwarf_dealloc_die(cu_die);
         return res;
     }
 
-    res = get_src_lines_from_context(dwarf_dbg, cu_die, line_context, &line_buf,
-                                     &count, error);
-    if (res != DW_DLV_OK) {
-        dwarf_dealloc_die(cu_die);
-        dwarf_srclines_dealloc_b(line_context);
-        return res;
-    }
+    attach_cu_die(&line_iterator, cu_die);
 
     char *file_name;
 
-    for (Dwarf_Signed i = 0; i < count; i++) {
-        res = dwarf_linesrc(line_buf[i], &file_name, error);
+    for (Dwarf_Signed i = 0; i < line_iterator.line_count; i++) {
+        res = dwarf_linesrc(line_iterator.dw_lines[i], &file_name, error);
         if (res != DW_DLV_OK) {
-            dwarf_dealloc_die(cu_die);
-            dwarf_srclines_dealloc_b(line_context);
+            free_line_iterator(&line_iterator);
             return res;
         }
 
@@ -361,22 +345,20 @@ int get_addr_from_source_line(const char *source_file_name,
         }
 
         Dwarf_Unsigned line_no;
-        res = dwarf_lineno(line_buf[i], &line_no, error);
+        res = dwarf_lineno(line_iterator.dw_lines[i], &line_no, error);
         if (res == DW_DLV_ERROR) {
             return res;
         } else if (line_no < line_num) {
             continue;
         }
 
-        res = dwarf_lineaddr(line_buf[i], line_addr, error);
+        res = dwarf_lineaddr(line_iterator.dw_lines[i], line_addr, error);
 
-        dwarf_dealloc_die(cu_die);
-        dwarf_srclines_dealloc_b(line_context);
+        free_line_iterator(&line_iterator);
         return res;
     }
 
-    dwarf_dealloc_die(cu_die);
-    dwarf_srclines_dealloc_b(line_context);
+    free_line_iterator(&line_iterator);
     return DW_DLV_NO_ENTRY;
 }
 
@@ -448,4 +430,42 @@ int get_cu_from_file_name(const char *source_file_name, Dwarf_Debug dwarf_dbg,
 
     if (found) return DW_DLV_OK;
     return DW_DLV_NO_ENTRY;
+}
+
+int get_line_iterator(Dwarf_Debug dwarf_dbg, Dwarf_Die cu_die,
+                      Line_Iterator *line_iterator, Dwarf_Error *error) {
+    int res;
+
+    line_iterator->cu_die_attach = line_iterator->line_context =
+        line_iterator->dw_lines = 0;
+
+    res = get_line_context(dwarf_dbg, cu_die, &line_iterator->line_context,
+                           &line_iterator->table_count, &line_iterator->version,
+                           error);
+    if (res != DW_DLV_OK) {
+        return res;
+    }
+
+    res = get_src_lines_from_context(
+        dwarf_dbg, cu_die, line_iterator->line_context,
+        &line_iterator->dw_lines, &line_iterator->line_count, error);
+    if (res != DW_DLV_OK) {
+        dwarf_srclines_dealloc_b(line_iterator->line_context);
+        return res;
+    }
+
+    return res;
+}
+
+int free_line_iterator(Line_Iterator *line_iterator) {
+    if (line_iterator->cu_die_attach != 0) {
+        dwarf_dealloc_die(line_iterator->cu_die_attach);
+    }
+    dwarf_srclines_dealloc_b(line_iterator->line_context);
+    return 0;
+}
+
+int attach_cu_die(Line_Iterator *line_iterator, Dwarf_Die cu_die) {
+    line_iterator->cu_die_attach = cu_die;
+    return 0;
 }

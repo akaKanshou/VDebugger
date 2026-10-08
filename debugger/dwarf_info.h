@@ -41,9 +41,13 @@ int get_sub_prog_die_in_die_from_addr(WORD addr_offset, Dwarf_Debug dwarf_dbg,
                                       Dwarf_Die die, Dwarf_Die *sub_prog_die,
                                       Dwarf_Error *error);
 
-// Checks whether given die contains the given addr_offset within its low_pc and
-// high_pc.
-// Returns DW_DLV_OK on success and populates contains_addr based on the result.
+int get_low_high_pc_from_die(Dwarf_Debug dwarf_dbg, Dwarf_Die die,
+                             Dwarf_Addr *low_pc, Dwarf_Addr *high_pc,
+                             Dwarf_Error *error);
+
+// Checks whether given die contains the given addr_offset within its low_pc
+// and high_pc. Returns DW_DLV_OK on success and populates contains_addr
+// based on the result.
 int die_contains_addr_offset(WORD addr_offset, Dwarf_Debug dwarf_dbg,
                              Dwarf_Die die, bool *contains_addr,
                              Dwarf_Error *error);
@@ -89,5 +93,23 @@ int get_addr_from_source_line(const char *source_file_name,
 // Returns DW_DLV_OK etc.
 int get_cu_from_file_name(const char *file_name, Dwarf_Debug dwarf_dbg,
                           Dwarf_Die *res_cu_die, Dwarf_Error *error);
+
+typedef struct Line_Iterator {
+    Dwarf_Line_Context line_context;
+    Dwarf_Small table_count;
+    Dwarf_Unsigned version;
+
+    Dwarf_Line *dw_lines;
+    Dwarf_Signed line_count;
+
+    Dwarf_Die cu_die_attach;
+} Line_Iterator;
+
+int get_line_iterator(Dwarf_Debug dwarf_dbg, Dwarf_Die cu_die,
+                      Line_Iterator *line_iterator, Dwarf_Error *error);
+
+int free_line_iterator(Line_Iterator *line_iterator);
+
+int attach_cu_die(Line_Iterator *line_iterator, Dwarf_Die cu_die);
 
 #endif
