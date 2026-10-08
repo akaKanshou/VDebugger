@@ -129,6 +129,10 @@ COMMAND match_command(char *buffer) {
         return FINISH;
     }
 
+    if (!strcmp(buffer, "next")) {
+        return NEXT;
+    }
+
     return INVALID_CMD;
 }
 

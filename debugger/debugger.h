@@ -83,7 +83,7 @@ typedef struct Breakpoint {
     WORD mem_addr;
     WORD saved_data;
     bool enabled;
-    const char *setKey;
+    bool temporary_enable;
 } Breakpoint;
 
 // make_breakpoint returns a breakpoint struct initialized with the
@@ -178,6 +178,8 @@ int handle_step(Debugger *dbg, Buffer *buffer);
 // =======================================
 // NEXT
 // =======================================
+
+int step_in(Debugger *dbg);
 
 // =======================================
 

@@ -16,6 +16,7 @@
 // TODO: Error handling ptrace and waitpid calls.
 // TODO: Change all variables to snake_case
 // TODO: ESRCH on successful termination - fix it
+// TODO: distinguish between fatal and workable errors
 
 int new_debugger(int c_pid, char *file, Debugger **__dbg) {
     Debugger *dbg = (Debugger *)malloc(sizeof(Debugger));
@@ -201,6 +202,9 @@ int handle_command(Debugger *dbg, COMMAND cmnd, Buffer *buffer) {
     case FINISH:
         res = step_out(dbg);
         break;
+    case NEXT:
+        res = step_in(dbg);
+        break;
     default:
         fprintf(stdout, "Unknown command"); // cmdline
         return 1;
@@ -280,6 +284,7 @@ Breakpoint *make_breakpoint(WORD memAddr) {
     breakpoint->mem_addr = memAddr;
     breakpoint->saved_data = 0;
     breakpoint->enabled = false;
+    breakpoint->temporary_enable = false;
     return breakpoint;
 }
 
@@ -288,7 +293,7 @@ int copy_breakpoint(Breakpoint *dest, const Breakpoint *src) {
     dest->enabled = src->enabled;
     dest->mem_addr = src->mem_addr;
     dest->saved_data = src->saved_data;
-    dest->setKey = dest->setKey;
+    dest->temporary_enable = dest->temporary_enable;
 }
 
 // TODO: free allocated breakpoints at every point
@@ -556,6 +561,141 @@ int handle_step(Debugger *dbg, Buffer *buffer) {
 // NEXT
 // =======================================
 
+int step_in(Debugger *dbg) {
+    int res = 0;
+
+    WORD pc;
+    res = get_reg_value(dbg, rip, &pc);
+    if (res) return res;
+
+    Dwarf_Die subprog_die = 0, cu_die = 0;
+    Dwarf_Error err;
+
+    res =
+        get_cu_from_addr(pc - dbg->load_address, dbg->dwarf_dbg, &cu_die, &err);
+    if (res == DW_DLV_ERROR) return 1; // fatal
+    if (cu_die == 0) return 1;         // couldnt find
+
+    Line_Iterator line_iterator;
+    res = get_line_iterator(dbg->dwarf_dbg, cu_die, &line_iterator, &err);
+    if (res != DW_DLV_OK) {
+        dwarf_dealloc_die(cu_die);
+        return 1;
+    }
+
+    attach_cu_die(&line_iterator, cu_die);
+
+    res = get_sub_prog_die_in_die_from_addr(
+        pc - dbg->load_address, dbg->dwarf_dbg, cu_die, &subprog_die, &err);
+    if (res == DW_DLV_ERROR) {
+        free_line_iterator(&line_iterator);
+        return 1; // Fatal
+    } else if (subprog_die == 0) {
+        return 1; // couldnt find
+    }
+
+    Dwarf_Addr low_pc, high_pc;
+    res = get_low_high_pc_from_die(dbg->dwarf_dbg, subprog_die, &low_pc,
+                                   &high_pc, &err);
+    dwarf_dealloc_die(subprog_die);
+    if (res != DW_DLV_OK) {
+        free_line_iterator(&line_iterator);
+        return 1;
+    }
+
+    Dwarf_Signed line_index;
+    res = search_addr_in_lines(&line_iterator, low_pc, &line_index, &err);
+    if (res) {
+        free_line_iterator(&line_iterator);
+        return 1;
+    }
+
+    Breakpoint *breakpoint;
+
+    Dwarf_Unsigned line_addr;
+    for (Dwarf_Unsigned i = line_index; i < line_iterator.line_count; i++) {
+        res = dwarf_lineaddr(line_iterator.dw_lines[i], &line_addr, &err);
+        if (res != DW_DLV_OK) {
+            free_line_iterator(&line_iterator);
+
+            return 1;
+        } else if (line_addr >= high_pc) {
+            break;
+        }
+
+        // Absolute pc from this point
+        line_addr += dbg->load_address;
+
+        res = get_breakpoint_at_addr(dbg, line_addr, &breakpoint);
+        if (res && res != KEY_NOT_EXISTS) {
+            free_line_iterator(&line_iterator);
+
+            return res;
+        }
+
+        if (!res && breakpoint->enabled) {
+            free(breakpoint);
+
+            continue;
+        }
+
+        breakpoint = make_breakpoint(line_addr);
+        if (res == KEY_NOT_EXISTS || !breakpoint->enabled) {
+            breakpoint->temporary_enable = true;
+        }
+
+        res = enable_breakpoint(dbg, breakpoint);
+        if (res) {
+            free(breakpoint);
+            free_line_iterator(&line_iterator);
+
+            return res;
+        }
+
+        res = save_breakpoint(dbg, breakpoint);
+        free(breakpoint);
+
+        if (res) {
+            free_line_iterator(&line_iterator);
+
+            return res;
+        }
+    }
+
+    res = step_out(dbg);
+    if (res) return res;
+
+    for (Dwarf_Unsigned i = line_index; i < line_iterator.line_count; i++) {
+        res = dwarf_lineaddr(line_iterator.dw_lines[i], &line_addr, &err);
+        if (res != DW_DLV_OK) {
+            free_line_iterator(&line_iterator);
+            return 1;
+        } else if (line_addr >= high_pc) {
+            break;
+        }
+
+        line_addr += dbg->load_address;
+
+        res = get_breakpoint_at_addr(dbg, line_addr, &breakpoint);
+        if (res && res != KEY_NOT_EXISTS) return res;
+
+        if (res == KEY_NOT_EXISTS || !breakpoint->enabled ||
+            !breakpoint->temporary_enable) {
+            free(breakpoint);
+            continue;
+        }
+
+        res = disable_breakpoint(dbg, breakpoint);
+        free(breakpoint);
+        if (res) {
+            return res;
+        }
+    }
+
+    free_line_iterator(&line_iterator);
+    return 0;
+}
+
 // =======================================
 
 // =======================================
@@ -581,7 +721,8 @@ int step_out(Debugger *dbg) {
 
     int temp = res == KEY_NOT_EXISTS || !breakpoint->enabled;
 
-    enable_breakpoint(dbg, breakpoint);
+    res = enable_breakpoint(dbg, breakpoint);
+    if (res) return res;
 
     res = step_over_breakpoint(dbg);
     if (res) {
@@ -641,6 +782,7 @@ int handle_where(Debugger *dbg, Buffer *buffer) {
         return 0;
     case WHERE_ARG_FUNC:
 
+        // TODO: move to seperate function
         Dwarf_Die sub_prog_die = 0;
         res = get_sub_prog_die_from_addr(pc - dbg->load_address, dbg->dwarf_dbg,
                                          &sub_prog_die, &error);
