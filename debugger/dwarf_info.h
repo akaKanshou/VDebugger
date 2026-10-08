@@ -10,6 +10,17 @@
 typedef long long int WORD;
 typedef unsigned long long int UWORD;
 
+typedef struct Line_Iterator {
+    Dwarf_Line_Context line_context;
+    Dwarf_Small table_count;
+    Dwarf_Unsigned version;
+
+    Dwarf_Line *dw_lines;
+    Dwarf_Signed line_count;
+
+    Dwarf_Die cu_die_attach;
+} Line_Iterator;
+
 // Initialize a Dwarf_Debug object for libdwarf API
 // Returns 0 on success, -1 on error.
 // If successfully initialized, it is the caller's responsibility to deallocate
@@ -77,6 +88,10 @@ int get_src_lines_from_context(Dwarf_Debug dwarf_dbg, Dwarf_Die cu_die,
 int get_line_no_from_addr(Dwarf_Unsigned addr_offset, Dwarf_Debug dwarf_dbg,
                           Dwarf_Unsigned *line_no, Dwarf_Error *error);
 
+int search_addr_in_lines(Line_Iterator *line_iterator,
+                         Dwarf_Unsigned addr_offset, Dwarf_Signed *line_index,
+                         Dwarf_Error *error);
+
 // Gets the line_addr of the line in the given file with the specified line
 // number.
 // file_name must be the absolute path to the file at the time of compilation
@@ -93,17 +108,6 @@ int get_addr_from_source_line(const char *source_file_name,
 // Returns DW_DLV_OK etc.
 int get_cu_from_file_name(const char *file_name, Dwarf_Debug dwarf_dbg,
                           Dwarf_Die *res_cu_die, Dwarf_Error *error);
-
-typedef struct Line_Iterator {
-    Dwarf_Line_Context line_context;
-    Dwarf_Small table_count;
-    Dwarf_Unsigned version;
-
-    Dwarf_Line *dw_lines;
-    Dwarf_Signed line_count;
-
-    Dwarf_Die cu_die_attach;
-} Line_Iterator;
 
 int get_line_iterator(Dwarf_Debug dwarf_dbg, Dwarf_Die cu_die,
                       Line_Iterator *line_iterator, Dwarf_Error *error);

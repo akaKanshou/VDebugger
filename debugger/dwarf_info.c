@@ -279,16 +279,33 @@ int get_line_no_from_addr(Dwarf_Unsigned addr_offset, Dwarf_Debug dwarf_dbg,
 
     attach_cu_die(&line_iterator, cu_die);
 
-    Dwarf_Signed low = 0, high = line_iterator.line_count - 1, mid;
+    Dwarf_Signed line_index;
+
+    res = search_addr_in_lines(&line_iterator, addr_offset, &line_index, error);
+    if (res != DW_DLV_OK) {
+        free_line_iterator(&line_iterator);
+        return 1;
+    }
+
+    res = dwarf_lineno(line_iterator.dw_lines[line_index], line_no, error);
+    free_line_iterator(&line_iterator);
+    return res;
+}
+
+int search_addr_in_lines(Line_Iterator *line_iterator,
+                         Dwarf_Unsigned addr_offset, Dwarf_Signed *line_index,
+                         Dwarf_Error *error) {
+
+    int res = 0;
+    Dwarf_Signed low = 0, high = line_iterator->line_count - 1, mid;
 
     Dwarf_Unsigned line_addr;
     while (low <= high) {
         mid = (low + high) / 2;
 
-        res = dwarf_lineaddr(line_iterator.dw_lines[mid], &line_addr, error);
+        res = dwarf_lineaddr(line_iterator->dw_lines[mid], &line_addr, error);
 
         if (res != DW_DLV_OK) {
-            free_line_iterator(&line_iterator);
             return res;
         }
 
@@ -300,13 +317,11 @@ int get_line_no_from_addr(Dwarf_Unsigned addr_offset, Dwarf_Debug dwarf_dbg,
     }
 
     if (high < 0) {
-        free_line_iterator(&line_iterator);
         return DW_DLV_NO_ENTRY;
     }
+    *line_index = high;
 
-    res = dwarf_lineno(line_iterator.dw_lines[high], line_no, error);
-    free_line_iterator(&line_iterator);
-    return res;
+    return 0;
 }
 
 int get_addr_from_source_line(const char *source_file_name,
