@@ -782,30 +782,9 @@ int handle_where(Debugger *dbg, Buffer *buffer) {
         return 0;
     case WHERE_ARG_FUNC:
 
-        // TODO: move to seperate function
-        Dwarf_Die sub_prog_die = 0;
-        res = get_sub_prog_die_from_addr(pc - dbg->load_address, dbg->dwarf_dbg,
-                                         &sub_prog_die, &error);
-
-        if (res == DW_DLV_ERROR) {
-            fprintf(stderr, "error: %s\n", dwarf_errmsg(error));
-            dwarf_dealloc_error(dbg->dwarf_dbg, error);
-            return 1;
-        }
-
         char *func_name;
-        res = get_sub_program_name(dbg->dwarf_dbg, sub_prog_die, &func_name,
-                                   &error);
-
-        dwarf_dealloc_die(sub_prog_die);
-        if (res == DW_DLV_ERROR) {
-            fprintf(stderr, "error: %s\n", dwarf_errmsg(error));
-            dwarf_dealloc_error(dbg->dwarf_dbg, error);
-            return 1;
-        } else if (res == DW_DLV_NO_ENTRY) {
-            fprintf(stdout, "Unknown name :(\n");
-            return 0;
-        }
+        res = get_subprog_name(dbg, pc, &func_name);
+        if (res) return res;
 
         fprintf(stdout, "Current function: %s\n", func_name);
         return 0;
@@ -818,6 +797,52 @@ int handle_where(Debugger *dbg, Buffer *buffer) {
             fprintf(stdout, "error: %s\n", dwarf_errmsg(error));
             return 1;
         } else if (res == DW_DLV_NO_ENTRY) {
+            return 1;
+        }
+
+        fprintf(stdout, "Current line: %lli\n", line_no);
+        return 0;
+    default:
+        return 1;
+    }
+}
+
+int get_subprog_name(Debugger *dbg, WORD addr, char **func_name) {
+    int res;
+
+        Dwarf_Die sub_prog_die = 0;
+    Dwarf_Error error;
+    res = get_sub_prog_die_from_addr(addr - dbg->load_address, dbg->dwarf_dbg,
+                                         &sub_prog_die, &error);
+
+        if (res == DW_DLV_ERROR) {
+            fprintf(stderr, "error: %s\n", dwarf_errmsg(error));
+            dwarf_dealloc_error(dbg->dwarf_dbg, error);
+            return 1;
+        }
+
+    res = get_sub_program_name(dbg->dwarf_dbg, sub_prog_die, func_name, &error);
+
+        dwarf_dealloc_die(sub_prog_die);
+        if (res == DW_DLV_ERROR) {
+            dwarf_dealloc_error(dbg->dwarf_dbg, error);
+            return 1;
+        } else if (res == DW_DLV_NO_ENTRY) {
+        return 1;
+        }
+
+        return 0;
+}
+
+// =======================================
+
+// =======================================
+// Backtrace
+// =======================================
+
+int backtrace(Debugger *dbg) {
+    unw_cursor_t cursor;
+    if (unw_init_remote(&cursor, dbg->as, dbg->ui) < 0) {
             return 1;
         }
 
