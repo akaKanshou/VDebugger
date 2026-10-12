@@ -8,6 +8,4 @@ set(SRC_FILES
 
 add_executable(vdb ${SRC_FILES})
 target_compile_options(vdb PRIVATE -O0)
-target_link_libraries(vdb PRIVATE linenoise)
-target_link_libraries(vdb PRIVATE cmap)
-target_link_libraries(vdb PRIVATE libdwarf.so)
+target_link_libraries(vdb PRIVATE linenoise cmap libdwarf.so unwind-ptrace unwind-generic)

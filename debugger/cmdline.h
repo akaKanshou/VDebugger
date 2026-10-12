@@ -19,6 +19,7 @@ typedef enum COMMAND {
     WHERE,
     FINISH,
     NEXT,
+    BACKTRACE,
 
     NUM_CMDS,
     INVALID_CMD,

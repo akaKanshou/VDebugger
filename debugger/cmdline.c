@@ -133,6 +133,10 @@ COMMAND match_command(char *buffer) {
         return NEXT;
     }
 
+    if (!strcmp(buffer, "backtrace")) {
+        return BACKTRACE;
+    }
+
     return INVALID_CMD;
 }
 

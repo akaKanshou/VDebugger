@@ -13,6 +13,8 @@
 
 #include <sys/signal.h>
 
+#include <libunwind-ptrace.h>
+
 typedef enum Errors {
     KEY_NOT_EXISTS,
     INVALID_COMMAND,
@@ -30,6 +32,9 @@ typedef struct Debugger {
     WORD load_address;
     hashmap *breakpoints;
     Dwarf_Debug dwarf_dbg;
+
+    void *context;
+    unw_addr_space_t as;
 } Debugger;
 
 // new_debugger returns a pointer to a Debugger initialized with the process id
@@ -74,6 +79,8 @@ int handle_command(Debugger *dbg, COMMAND cmnd, Buffer *buffer);
 int debug_continue(Debugger *dbg);
 
 int debugee_terminated(int status);
+
+int init_unw(Debugger *dbg);
 
 // =======================================
 // BREAKPOINT
@@ -202,6 +209,16 @@ int step_out(Debugger *dbg);
 // Command syntax:
 // where [addr | func | line]
 int handle_where(Debugger *dbg, Buffer *buffer);
+
+int get_subprog_name(Debugger *dbg, WORD addr, char **func_name);
+
+// =======================================
+
+// =======================================
+// Backtrace
+// =======================================
+
+int backtrace(Debugger *dbg);
 
 // =======================================
 

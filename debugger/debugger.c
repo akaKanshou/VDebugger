@@ -27,12 +27,16 @@ int new_debugger(int c_pid, char *file, Debugger **__dbg) {
     if (res) return res;
     res = init_dwarf(file, &dbg->dwarf_dbg);
     if (res) return res;
+    res = init_unw(dbg);
+    if (res) return res;
     *__dbg = dbg;
     return 0;
 }
 
 void free_debugger(Debugger *dbg) {
     dwarf_finish(dbg->dwarf_dbg);
+    _UPT_destroy(dbg->context);
+    unw_destroy_addr_space(dbg->as);
     free(dbg);
 }
 
@@ -81,6 +85,20 @@ int debugee_terminated(int status) {
     if (WIFEXITED(status) || WIFSIGNALED(status)) {
         return 1;
     }
+    return 0;
+}
+
+int init_unw(Debugger *dbg) {
+    dbg->as = unw_create_addr_space(&_UPT_accessors, 0);
+    if (!dbg->as) {
+        return 1;
+    }
+
+    dbg->context = _UPT_create(dbg->c_pid);
+    if (!dbg->context) {
+        return 1;
+    }
+
     return 0;
 }
 
@@ -204,6 +222,9 @@ int handle_command(Debugger *dbg, COMMAND cmnd, Buffer *buffer) {
         break;
     case NEXT:
         res = step_in(dbg);
+        break;
+    case BACKTRACE:
+        res = backtrace(dbg);
         break;
     default:
         fprintf(stdout, "Unknown command"); // cmdline
@@ -810,28 +831,28 @@ int handle_where(Debugger *dbg, Buffer *buffer) {
 int get_subprog_name(Debugger *dbg, WORD addr, char **func_name) {
     int res;
 
-        Dwarf_Die sub_prog_die = 0;
+    Dwarf_Die sub_prog_die = 0;
     Dwarf_Error error;
     res = get_sub_prog_die_from_addr(addr - dbg->load_address, dbg->dwarf_dbg,
-                                         &sub_prog_die, &error);
+                                     &sub_prog_die, &error);
 
-        if (res == DW_DLV_ERROR) {
-            fprintf(stderr, "error: %s\n", dwarf_errmsg(error));
-            dwarf_dealloc_error(dbg->dwarf_dbg, error);
-            return 1;
-        }
+    if (res == DW_DLV_ERROR) {
+        fprintf(stderr, "error: %s\n", dwarf_errmsg(error));
+        dwarf_dealloc_error(dbg->dwarf_dbg, error);
+        return 1;
+    }
 
     res = get_sub_program_name(dbg->dwarf_dbg, sub_prog_die, func_name, &error);
 
-        dwarf_dealloc_die(sub_prog_die);
-        if (res == DW_DLV_ERROR) {
-            dwarf_dealloc_error(dbg->dwarf_dbg, error);
-            return 1;
-        } else if (res == DW_DLV_NO_ENTRY) {
+    dwarf_dealloc_die(sub_prog_die);
+    if (res == DW_DLV_ERROR) {
+        dwarf_dealloc_error(dbg->dwarf_dbg, error);
         return 1;
-        }
+    } else if (res == DW_DLV_NO_ENTRY) {
+        return 1;
+    }
 
-        return 0;
+    return 0;
 }
 
 // =======================================
@@ -842,15 +863,44 @@ int get_subprog_name(Debugger *dbg, WORD addr, char **func_name) {
 
 int backtrace(Debugger *dbg) {
     unw_cursor_t cursor;
-    if (unw_init_remote(&cursor, dbg->as, dbg->ui) < 0) {
-            return 1;
-        }
-
-        fprintf(stdout, "Current line: %lli\n", line_no);
-        return 0;
-    default:
+    if (unw_init_remote(&cursor, dbg->as, dbg->context) < 0) {
         return 1;
     }
+
+    int res;
+
+    do {
+        unw_word_t ip, sp, offset;
+        char sym[4096];
+        res = unw_get_reg(&cursor, UNW_REG_IP, &ip);
+        if (res < 0) {
+            fprintf(stdout, "error reading ip: %i\n", -res);
+            return 1;
+        } // TODO: Error handling
+        res = unw_get_reg(&cursor, UNW_REG_SP, &sp);
+        if (res < 0) {
+            fprintf(stdout, "error reading sp: %i\n", -res);
+            return 1;
+        } // TODO: Error handling
+        res = unw_get_proc_name(&cursor, sym, sizeof(sym), &offset);
+        if (res < 0) {
+            if (res == -UNW_ENOINFO) {
+                res = 0;
+                continue;
+            }
+            fprintf(stdout, "error reading name: %i\n", -res);
+            return 1;
+        } // TODO: Error handling
+        fprintf(stdout, "ip:%llx sp:%llx\n", ip, sp);
+        fprintf(stdout, "(%s+0x%lx)\n", sym, offset);
+    } while ((res = unw_step(&cursor)) > 0);
+
+    if (res < 0) {
+        fprintf(stdout, "error reading ip: %i\n", -res);
+        return 1;
+    } // TODO: Error handling
+
+    return 0;
 }
 
 // =======================================
