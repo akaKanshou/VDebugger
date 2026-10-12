@@ -129,6 +129,15 @@ int get_siginfo(Debugger *dbg, siginfo_t *info) {
     return 0;
 }
 
+int ptrace_peek_data(Debugger *dbg, UWORD addr, UWORD *data) {
+    errno = 0;
+    *data = ptrace(PTRACE_PEEKDATA, dbg->c_pid, addr, NULL);
+    if (data == -1 && errno) {
+        return PTRACE_ERROR;
+    }
+    return 0;
+}
+
 int run_debugger(Debugger *dbg) { // application
     if (dbg == NULL) {
         return 1;
@@ -335,11 +344,11 @@ int save_breakpoint(Debugger *dbg, Breakpoint *breakpoint) {
 }
 
 int enable_breakpoint(Debugger *dbg, Breakpoint *breakpoint) {
-    errno = 0;
-    WORD data = ptrace(PTRACE_PEEKDATA, dbg->c_pid, breakpoint->mem_addr, NULL);
-    if (data == -1 && errno) {
-        return PTRACE_ERROR;
-    }
+    int res;
+
+    UWORD data;
+    res = ptrace_peek_data(dbg, breakpoint->mem_addr, &data);
+    if (res) return res;
 
     breakpoint->saved_data = data;
 
@@ -723,18 +732,16 @@ int step_in(Debugger *dbg) {
 // FINISH
 // =======================================
 
+// TODO: consider fpo and use libunwind here
 int step_out(Debugger *dbg) {
     int res;
     UWORD frame_pointer;
     res = get_reg_value(dbg, rbp, &frame_pointer);
     if (res) return res;
 
-    errno = 0;
-    UWORD return_addr =
-        ptrace(PTRACE_PEEKDATA, dbg->c_pid, frame_pointer + 8, NULL);
-    if (return_addr == -1 && errno) {
-        return PTRACE_ERROR;
-    }
+    UWORD return_addr;
+    res = ptrace_peek_data(dbg, frame_pointer + 8, &return_addr);
+    if (res) return res;
 
     Breakpoint *breakpoint;
     res = get_breakpoint_at_addr(dbg, return_addr, &breakpoint);

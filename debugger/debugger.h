@@ -70,6 +70,8 @@ int get_siginfo(Debugger *dbg, siginfo_t *info);
 // Handle a SIGTRAP si_code
 int handle_sigtrap(Debugger *dbg, siginfo_t *info);
 
+int ptrace_peek_data(Debugger *dbg, UWORD addr, UWORD *data);
+
 // handle_command calls the approriate handler for specified command.
 // Returns 0 on success, 1 if debugger should terminate and, < 0 on failure.
 int handle_command(Debugger *dbg, COMMAND cmnd, Buffer *buffer);
