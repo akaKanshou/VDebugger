@@ -85,70 +85,128 @@ REGISTER DW_to_reg(int DWARFN) {
     return NO_SUCH_REGISTER;
 }
 
-UWORD *get_register(regs_struct *regs, REGISTER reg) {
+int get_register(regs_struct *regs, REGISTER reg, UWORD **reg_output) {
     switch (reg) {
     case r15:
-        return &regs->r15;
+        *reg_output = &regs->r15;
+        break;
+
     case r14:
-        return &regs->r14;
+        *reg_output = &regs->r14;
+        break;
+
     case r13:
-        return &regs->r13;
+        *reg_output = &regs->r13;
+        break;
+
     case r12:
-        return &regs->r12;
+        *reg_output = &regs->r12;
+        break;
+
     case rbp:
-        return &regs->rbp;
+        *reg_output = &regs->rbp;
+        break;
+
     case rbx:
-        return &regs->rbx;
+        *reg_output = &regs->rbx;
+        break;
+
     case r11:
-        return &regs->r11;
+        *reg_output = &regs->r11;
+        break;
+
     case r10:
-        return &regs->r10;
+        *reg_output = &regs->r10;
+        break;
+
     case r9:
-        return &regs->r9;
+        *reg_output = &regs->r9;
+        break;
+
     case r8:
-        return &regs->r8;
+        *reg_output = &regs->r8;
+        break;
+
     case rax:
-        return &regs->rax;
+        *reg_output = &regs->rax;
+        break;
+
     case rcx:
-        return &regs->rcx;
+        *reg_output = &regs->rcx;
+        break;
+
     case rdx:
-        return &regs->rdx;
+        *reg_output = &regs->rdx;
+        break;
+
     case rsi:
-        return &regs->rsi;
+        *reg_output = &regs->rsi;
+        break;
+
     case rdi:
-        return &regs->rdi;
+        *reg_output = &regs->rdi;
+        break;
+
     case orig_rax:
-        return &regs->orig_rax;
+        *reg_output = &regs->orig_rax;
+        break;
+
     case rip:
-        return &regs->rip;
+        *reg_output = &regs->rip;
+        break;
+
     case cs:
-        return &regs->cs;
+        *reg_output = &regs->cs;
+        break;
+
     case eflags:
-        return &regs->eflags;
+        *reg_output = &regs->eflags;
+        break;
+
     case rsp:
-        return &regs->rsp;
+        *reg_output = &regs->rsp;
+        break;
+
     case ss:
-        return &regs->ss;
+        *reg_output = &regs->ss;
+        break;
+
     case fs_base:
-        return &regs->fs_base;
+        *reg_output = &regs->fs_base;
+        break;
+
     case gs_base:
-        return &regs->gs_base;
+        *reg_output = &regs->gs_base;
+        break;
+
     case ds:
-        return &regs->ds;
+        *reg_output = &regs->ds;
+        break;
+
     case es:
-        return &regs->es;
+        *reg_output = &regs->es;
+        break;
+
     case fs:
-        return &regs->fs;
+        *reg_output = &regs->fs;
+        break;
+
     case gs:
-        return &regs->gs;
+        *reg_output = &regs->gs;
+        break;
+
     default:
-        return NULL;
+        return 1;
     }
+
+    return 0;
 }
 
 void print_registers(regs_struct *regs) {
+    int res;
     for (REGISTER reg = 0; reg < NUM_REGISTERS; reg++) {
-        fprintf(stdout, "%-12s:%llx\n", registerAbbr[reg],
-                *get_register(regs, reg));
+        UWORD *p_reg;
+        get_register(regs, reg, &p_reg);
+        fprintf(stdout, "%-12s:%llx\n", registerAbbr[reg], *p_reg);
     }
 } // cmdline

@@ -111,7 +111,8 @@ int handle_sigtrap(Debugger *dbg, siginfo_t *info) {
         res = get_regs_struct(dbg, &regs);
         if (res) return res;
 
-        UWORD *pc = get_register(&regs, rip); // TODO: change io
+        UWORD *pc;
+        get_register(&regs, rip, &pc); // TODO: change io
         *pc = *pc - 1;
 
         res = set_regs_struct(dbg, &regs);
@@ -132,7 +133,7 @@ int get_siginfo(Debugger *dbg, siginfo_t *info) {
 int ptrace_peek_data(Debugger *dbg, UWORD addr, UWORD *data) {
     errno = 0;
     *data = ptrace(PTRACE_PEEKDATA, dbg->c_pid, addr, NULL);
-    if (data == -1 && errno) {
+    if (*data == -1 && errno) {
         return PTRACE_ERROR;
     }
     return 0;
@@ -433,7 +434,10 @@ int handle_register(Debugger *dbg, Buffer *buffer) {
         }
         if (reg == NO_SUCH_REGISTER) return 1;
 
-        fprintf(stdout, "value :%llx\n", *get_register(&regs, reg)); // cmdline
+        UWORD *p_reg;
+        res = get_register(&regs, reg, &p_reg);
+        if (res) return res;
+        fprintf(stdout, "value :%llx\n", *p_reg); // cmdline
 
         return 0;
     case WRITE_REGISTER:
@@ -485,8 +489,9 @@ int get_reg_value(Debugger *dbg, REGISTER reg, WORD *value) {
     regs_struct regs;
     if ((res = get_regs_struct(dbg, &regs)) > 0) return res;
 
-    UWORD *regl = get_register(&regs, reg);
-    if (!regl) return NO_SUCH_REGISTER;
+    UWORD *regl;
+    res = get_register(&regs, reg, &regl);
+    if (res) return NO_SUCH_REGISTER;
 
     *value = *regl;
     return 0;
@@ -498,8 +503,9 @@ int set_reg_value(Debugger *dbg, REGISTER reg, WORD value) {
     regs_struct regs;
     if (res = get_regs_struct(dbg, &regs)) return res;
 
-    UWORD *regl = get_register(&regs, reg);
-    if (!regl) return NO_SUCH_REGISTER;
+    UWORD *regl;
+    res = get_register(&regs, reg, &regl);
+    if (res) return NO_SUCH_REGISTER;
 
     *regl = value;
     if (res = set_regs_struct(dbg, &regs)) return res;
@@ -525,7 +531,9 @@ int step_over_breakpoint(Debugger *dbg) {
     regs_struct regs;
     get_regs_struct(dbg, &regs);
 
-    UWORD *program_counter = get_register(&regs, rip);
+    UWORD *program_counter;
+    res = get_register(&regs, rip, &program_counter);
+    if (res) return res;
 
     Breakpoint *breakpoint;
     res = get_breakpoint_at_addr(dbg, *program_counter, &breakpoint);

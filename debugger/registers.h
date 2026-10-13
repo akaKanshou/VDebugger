@@ -1,7 +1,7 @@
 #ifndef REGISTERS_H
 #define REGISTERS_H
 
-#define NO_SUCH_REGISTER -2
+#define NO_SUCH_REGISTER 1
 
 #include <stdint.h>
 #include <sys/user.h>
@@ -58,9 +58,9 @@ REGISTER abbr_to_reg(const char *regAbbr);
 REGISTER DW_to_reg(int DWARFN);
 
 // get_register returns the location of the register field in the given
-// user_regs_struct struct.
+// user_regs_struct struct. Do NOT free reg_output.
 // Returns NULL if reg value is invalid.
-UWORD *get_register(regs_struct *regs, REGISTER reg);
+int get_register(regs_struct *regs, REGISTER reg, UWORD **reg_output);
 
 // print_registers prints the given regs_struct.
 void print_registers(regs_struct *regs);
