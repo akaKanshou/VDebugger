@@ -4,6 +4,7 @@ set(SRC_FILES
     cmdline.c 
     registers.c 
     dwarf_info.c
+    loc_expr.c
 )
 
 add_executable(vdb ${SRC_FILES})
