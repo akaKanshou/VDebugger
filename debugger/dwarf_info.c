@@ -485,3 +485,44 @@ int attach_cu_die(Line_Iterator *line_iterator, Dwarf_Die cu_die) {
     line_iterator->cu_die_attach = cu_die;
     return 0;
 }
+
+int get_formal_params(Dwarf_Debug dwarf_dbg, Dwarf_Die sub_prog_die,
+                      Dwarf_Die *fparam, Dwarf_Error *error) {
+    int res = 0;
+
+    Dwarf_Half dw_tag;
+    Dwarf_Die next_die = 0;
+
+    if (*fparam == NULL) { // If: is first call
+        res = dwarf_child(sub_prog_die, fparam, error);
+        if (res != DW_DLV_OK) {
+            // Error or DIE has no children
+            return res;
+        }
+    } else { // Else: is successive call. Move to next sibling
+        res = dwarf_siblingof_c(*fparam, &next_die, error);
+        dwarf_dealloc_die(*fparam);
+        *fparam = next_die;
+        if (res) {
+            return res;
+        }
+    }
+
+    while (true) { // Traverse siblings
+        res = dwarf_tag(*fparam, &dw_tag, error);
+        if (res != DW_DLV_OK) {
+            return res;
+        } else if (dw_tag == DW_TAG_formal_parameter) { // Found a param; return
+            return DW_DLV_OK;
+        }
+
+        res = dwarf_siblingof_c(*fparam, &next_die, error);
+        dwarf_dealloc_die(*fparam);
+        *fparam = next_die;
+        if (res) {
+            return res;
+        }
+    }
+
+    return res;
+}

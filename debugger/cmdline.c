@@ -137,6 +137,10 @@ COMMAND match_command(char *buffer) {
         return BACKTRACE;
     }
 
+    if (!strcmp(buffer, "var")) {
+        return VAR;
+    }
+
     return INVALID_CMD;
 }
 
@@ -228,6 +232,22 @@ WHERE_OPTIONS match_where_option(char *buffer) {
     }
 
     return INVALID_WHERE_OPT;
+}
+
+VAR_OPTIONS match_var_option(char *buffer) {
+    if (!strcmp(buffer, "get&")) {
+        return GET_VAR_ADDR_OPTION;
+    }
+
+    if (!strcmp(buffer, "set&")) {
+        return SET_VAR_ADDR_OPTION;
+    }
+
+    if (!strcmp(buffer, "params")) {
+        return PARAM_VAR_OPTION;
+    }
+
+    return INVALID_VAR_OPTION;
 }
 
 bool merge_and_check_path(const char *path, const char *dir_path,

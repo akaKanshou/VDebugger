@@ -20,6 +20,7 @@ typedef enum COMMAND {
     FINISH,
     NEXT,
     BACKTRACE,
+    VAR,
 
     NUM_CMDS,
     INVALID_CMD,
@@ -54,6 +55,14 @@ typedef enum WHERE_OPTIONS {
     INVALID_WHERE_OPT,
 } WHERE_OPTIONS;
 
+typedef enum VAR_OPTIONS {
+    GET_VAR_ADDR_OPTION,
+    SET_VAR_ADDR_OPTION,
+    PARAM_VAR_OPTION,
+
+    INVALID_VAR_OPTION
+} VAR_OPTIONS;
+
 // Minimal char buffer class
 typedef struct Buffer {
     // Underlying buffer.
@@ -61,7 +70,8 @@ typedef struct Buffer {
     char *data;
 
     // size is the length of the buffer in characters.
-    // a value of 0 indicates allocation from linenoise and an unknown length.
+    // a value of 0 indicates allocation from linenoise and an unknown
+    // length.
     int size;
 
     // rseek is the read seek of the bufer.
@@ -132,6 +142,8 @@ REGISTER_OPTIONS match_register_option(char *buffer);
 // available where command options. If no option matches, returns the
 // INVALID_WHERE_OPT command.
 WHERE_OPTIONS match_where_option(char *buffer);
+
+VAR_OPTIONS match_var_option(char *buffer);
 
 // Helper function to check if {dir_path}/{file_name} matches given path.
 // TODO: clean file path. Relative file paths are unlikely to work here.

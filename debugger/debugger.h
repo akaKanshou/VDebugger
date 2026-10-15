@@ -222,6 +222,21 @@ int get_subprog_name(Debugger *dbg, WORD addr, char **func_name);
 
 int backtrace(Debugger *dbg);
 
+int get_preserved_registers(unw_cursor_t *cursor, unw_word_t *ip,
+                            unw_word_t *sp);
+
+// int init_loc_info(Debugger *dbg, Loc_Info *loc_info);
+
+// =======================================
+
+// =======================================
+// Var
+// =======================================
+
+int handle_var(Debugger *dbg, Buffer *buffer);
+
+int handle_param_var(Debugger *dbg);
+
 // =======================================
 
 // =======================================

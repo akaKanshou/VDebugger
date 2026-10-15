@@ -918,6 +918,137 @@ int backtrace(Debugger *dbg) {
     return 0;
 }
 
+int get_preserved_registers(unw_cursor_t *cursor, unw_word_t *ip,
+                            unw_word_t *sp) {
+    int res = 0;
+
+    res = unw_get_reg(cursor, UNW_REG_IP, ip);
+    if (res < 0) {
+        return 1;
+    } // TODO: Error handling
+
+    res = unw_get_reg(cursor, UNW_REG_SP, sp);
+    if (res < 0) {
+        return 1;
+    } // TODO: Error handling
+
+    return 0;
+}
+
+// =======================================
+
+// =======================================
+// Var
+// =======================================
+
+int handle_var(Debugger *dbg, Buffer *buffer) {
+    char *arg = next_token(buffer);
+    if (!arg) return 1;
+
+    WHERE_OPTIONS mode = match_var_option(arg);
+
+    switch (mode) {
+    default:
+        return 1;
+    case GET_VAR_OPTION:
+        break;
+
+    case SET_VAR_OPTION:
+        break;
+    }
+
+    arg = next_token(buffer);
+    if (!arg) return 1;
+
+    WHERE_OPTIONS op = match_var_option(arg);
+
+    switch (op) {
+    case PARAM_VAR_OPTION:
+        return handle_param_var(dbg);
+
+    default:
+        // is a variable name so do that stuff
+        // TODO: implement
+        return 1;
+    }
+
+    return 0;
+}
+
+int handle_param_var(Debugger *dbg) {
+    int res;
+
+    // Loc_Info loc_info = {.c_pid = dbg->c_pid};
+    // res = init_loc_info(&loc_info);
+    // if (res) return res;
+
+    UWORD pc;
+    res = get_reg_value(dbg, rip, &pc);
+    if (res) return res;
+
+    Dwarf_Die sub_prog_die, fparam = NULL;
+    Dwarf_Error error;
+    res = get_sub_prog_die_from_addr(
+        /*loc_info.callee_regs_cur_value.rip*/ pc - dbg->load_address,
+        dbg->dwarf_dbg, &sub_prog_die, &error);
+    if (res == DW_DLV_ERROR) {
+        dwarf_dealloc_die(sub_prog_die);
+        dwarf_dealloc_error(dbg->dwarf_dbg, error);
+        return 1;
+    }
+
+    char *func_name;
+    res = dwarf_diename(sub_prog_die, &func_name, &error);
+    if (res) {
+        dwarf_dealloc_die(sub_prog_die);
+        return 1;
+    }
+    fprintf(stdout, "Printing formal parameter addresses of func: %s\n",
+            func_name);
+
+    int i = -1;
+    char *fparam_name;
+    while ((res = get_formal_params(dbg->dwarf_dbg, sub_prog_die, &fparam,
+                                    &error)) == DW_DLV_OK) {
+        i++;
+
+        res = dwarf_diename(fparam, &fparam_name, &error);
+        if (res == DW_DLV_ERROR) {
+            dwarf_dealloc_die(sub_prog_die);
+            dwarf_dealloc_die(fparam);
+            return 1;
+        } else if (res == DW_DLV_NO_ENTRY) {
+            fprintf(stdout, "Could not fetch a name for  parameter %i\n", i);
+        } else {
+            fprintf(stdout, "Formal parameter %i: %s\n", i, fparam_name);
+        }
+    }
+    dwarf_dealloc_die(sub_prog_die);
+
+    if (fparam != NULL) dwarf_dealloc_die(fparam);
+    if (res == DW_DLV_ERROR) return 1;
+    return 0;
+}
+
+// int init_loc_info(Debugger *dbg, Loc_Info *loc_info) {
+//     int res;
+//     res = get_regs_struct(dbg, &loc_info->callee_regs_cur_value);
+//     if (res) return res;
+
+//     unw_cursor_t cursor;
+//     if (unw_init_remote(&cursor, dbg->as, dbg->context) < 0) return 1;
+
+//     res = unw_step(&cursor);
+//     if (res < 0) return 1;
+//     if (res == 0) return 0;
+
+//     res = get_preserved_registers(&cursor, &loc_info->caller_ip,
+//                                   &loc_info->caller_sp);
+//     if (res) return 1;
+
+//     return 0;
+// }
+
 // =======================================
 
 // =======================================
