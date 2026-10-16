@@ -236,6 +236,13 @@ int handle_command(Debugger *dbg, COMMAND cmnd, Buffer *buffer) {
     case BACKTRACE:
         res = backtrace(dbg);
         break;
+    case VAR:
+        res = handle_var(dbg, buffer);
+        break;
+    case PEEK_DATA:
+        res = handle_peek(dbg, buffer);
+        break;
+
     default:
         fprintf(stdout, "Unknown command"); // cmdline
         return 1;
@@ -529,7 +536,8 @@ int single_step(Debugger *dbg) {
 int step_over_breakpoint(Debugger *dbg) {
     int res;
     regs_struct regs;
-    get_regs_struct(dbg, &regs);
+    res = get_regs_struct(dbg, &regs);
+    if (res) return res;
 
     UWORD *program_counter;
     res = get_register(&regs, rip, &program_counter);
@@ -887,16 +895,13 @@ int backtrace(Debugger *dbg) {
     do {
         unw_word_t ip, sp, offset;
         char sym[4096];
-        res = unw_get_reg(&cursor, UNW_REG_IP, &ip);
-        if (res < 0) {
-            fprintf(stdout, "error reading ip: %i\n", -res);
+
+        res = get_preserved_registers(&cursor, &ip, &sp);
+        if (res) {
+            fprintf(stdout, "error reading caller registers: %i\n", -res);
             return 1;
-        } // TODO: Error handling
-        res = unw_get_reg(&cursor, UNW_REG_SP, &sp);
-        if (res < 0) {
-            fprintf(stdout, "error reading sp: %i\n", -res);
-            return 1;
-        } // TODO: Error handling
+        }
+
         res = unw_get_proc_name(&cursor, sym, sizeof(sym), &offset);
         if (res < 0) {
             if (res == -UNW_ENOINFO) {
@@ -906,6 +911,7 @@ int backtrace(Debugger *dbg) {
             fprintf(stdout, "error reading name: %i\n", -res);
             return 1;
         } // TODO: Error handling
+
         fprintf(stdout, "ip:%llx sp:%llx\n", ip, sp);
         fprintf(stdout, "(%s+0x%lx)\n", sym, offset);
     } while ((res = unw_step(&cursor)) > 0);
@@ -950,10 +956,10 @@ int handle_var(Debugger *dbg, Buffer *buffer) {
     switch (mode) {
     default:
         return 1;
-    case GET_VAR_OPTION:
+    case GET_VAR_ADDR_OPTION:
         break;
 
-    case SET_VAR_OPTION:
+    case SET_VAR_ADDR_OPTION:
         break;
     }
 
@@ -978,9 +984,11 @@ int handle_var(Debugger *dbg, Buffer *buffer) {
 int handle_param_var(Debugger *dbg) {
     int res;
 
-    // Loc_Info loc_info = {.c_pid = dbg->c_pid};
-    // res = init_loc_info(&loc_info);
-    // if (res) return res;
+    Loc_Info loc_info = {.c_pid = dbg->c_pid,
+                         .load_address = dbg->load_address,
+                         .frame_base = 0};
+    res = init_loc_info(dbg, &loc_info);
+    if (res) return res;
 
     UWORD pc;
     res = get_reg_value(dbg, rip, &pc);
@@ -997,14 +1005,23 @@ int handle_param_var(Debugger *dbg) {
         return 1;
     }
 
+    res = get_var_location(dbg, loc_info, sub_prog_die, DW_AT_frame_base,
+                           &loc_info.frame_base, &error);
+    if (res) {
+        fprintf(stdout, "Err =%i\n", res);
+        return res;
+    }
+
     char *func_name;
     res = dwarf_diename(sub_prog_die, &func_name, &error);
     if (res) {
         dwarf_dealloc_die(sub_prog_die);
         return 1;
     }
-    fprintf(stdout, "Printing formal parameter addresses of func: %s\n",
-            func_name);
+    fprintf(
+        stdout,
+        "Printing formal parameter addresses of func: %s\nFrame base: %llx\n",
+        func_name, loc_info.frame_base);
 
     int i = -1;
     char *fparam_name;
@@ -1022,32 +1039,232 @@ int handle_param_var(Debugger *dbg) {
         } else {
             fprintf(stdout, "Formal parameter %i: %s\n", i, fparam_name);
         }
-    }
-    dwarf_dealloc_die(sub_prog_die);
 
+        UWORD var_addr;
+        res = get_var_location(dbg, loc_info, fparam, DW_AT_location, &var_addr,
+                               &error);
+        if (res) {
+            fprintf(stdout, "Could not fetch the location of parameter %i\n",
+                    i);
+            continue;
+        }
+
+        fprintf(stdout, "Evaluated address: %llx\n", var_addr);
+    }
+
+    dwarf_dealloc_die(sub_prog_die);
     if (fparam != NULL) dwarf_dealloc_die(fparam);
     if (res == DW_DLV_ERROR) return 1;
     return 0;
 }
 
-// int init_loc_info(Debugger *dbg, Loc_Info *loc_info) {
-//     int res;
-//     res = get_regs_struct(dbg, &loc_info->callee_regs_cur_value);
-//     if (res) return res;
+int init_loc_info(Debugger *dbg, Loc_Info *loc_info) {
+    int res;
+    res = get_regs_struct(dbg, &loc_info->callee_regs_cur_value);
+    if (res) return res;
 
-//     unw_cursor_t cursor;
-//     if (unw_init_remote(&cursor, dbg->as, dbg->context) < 0) return 1;
+    unw_cursor_t cursor;
+    if (unw_init_remote(&cursor, dbg->as, dbg->context) < 0) return 1;
 
-//     res = unw_step(&cursor);
-//     if (res < 0) return 1;
-//     if (res == 0) return 0;
+    res = unw_step(&cursor);
+    if (res < 0) return 1;
+    if (res == 0) return 0;
 
-//     res = get_preserved_registers(&cursor, &loc_info->caller_ip,
-//                                   &loc_info->caller_sp);
-//     if (res) return 1;
+    res = get_preserved_registers(&cursor, &loc_info->caller_ip,
+                                  &loc_info->caller_sp);
+    if (res) return 1;
 
-//     return 0;
-// }
+    return 0;
+}
+
+int get_var_location(Debugger *dbg, Loc_Info loc_info, Dwarf_Die var_die,
+                     Dwarf_Half loc_attr, UWORD *var_addr, Dwarf_Error *error) {
+    int res;
+    Loc_Expr loc_expr = {.loc_info = loc_info};
+
+    Dwarf_Attribute location_attr = 0;
+    res = dwarf_attr(var_die, loc_attr, &location_attr, error);
+    if (res != DW_DLV_OK) return 1;
+
+    // Getting loclist_head
+
+    Dwarf_Unsigned lcount = 0;
+    Dwarf_Loc_Head_c loclist_head = 0;
+    res = dwarf_get_loclist_c(location_attr, &loclist_head, &lcount, error);
+    if (res != DW_DLV_OK) {
+        dwarf_dealloc_attribute(location_attr);
+        dwarf_dealloc_loc_head_c(loclist_head);
+        return 1;
+    }
+
+    // Getting locdesc_entry
+
+    Dwarf_Small loclist_lkind = 0;
+    Dwarf_Small lle_value = 0;
+    Dwarf_Unsigned rawval1 = 0;
+    Dwarf_Unsigned rawval2 = 0;
+    Dwarf_Bool debug_addr_unavailable = false;
+    Dwarf_Addr lopc = 0;
+    Dwarf_Addr hipc = 0;
+    Dwarf_Unsigned loclist_expr_op_count = 0;
+    Dwarf_Locdesc_c locdesc_entry = 0;
+    Dwarf_Unsigned expression_offset = 0;
+    Dwarf_Unsigned locdesc_offset = 0;
+
+    Dwarf_Unsigned i = 0;
+    for (i = 0; i < lcount; ++i) {
+        res = dwarf_get_locdesc_entry_d(
+            loclist_head, i, &lle_value, &rawval1, &rawval2,
+            &debug_addr_unavailable, &lopc, &hipc, &loclist_expr_op_count,
+            &locdesc_entry, &loclist_lkind, &expression_offset, &locdesc_offset,
+            error);
+        if (res != DW_DLV_OK) {
+            dwarf_dealloc_attribute(location_attr);
+            dwarf_dealloc_loc_head_c(loclist_head);
+            return 1;
+        }
+
+        if (lopc <=
+                loc_info.callee_regs_cur_value.rip - loc_info.load_address &&
+            hipc >=
+                loc_info.callee_regs_cur_value.rip - loc_info.load_address) {
+            break;
+        }
+    }
+
+    fprintf(stdout, "Got %s\n", "locdesc_entry");
+
+    // Evaluating loc_expr
+    res = evaluate_expr(&loc_expr, loclist_expr_op_count, locdesc_entry, 0,
+                        var_addr, error);
+    if (res) {
+        return 1;
+    }
+
+    fprintf(stdout, "Got %s\n", "result");
+
+    dwarf_dealloc_attribute(location_attr);
+    dwarf_dealloc_loc_head_c(loclist_head);
+    return 0;
+}
+
+int evaluate_expr(Loc_Expr *loc_expr, Dwarf_Unsigned loclist_expr_op_count,
+                  Dwarf_Locdesc_c locdesc_entry, Dwarf_Unsigned index,
+                  UWORD *result, Dwarf_Error *error) {
+    int res;
+
+    for (Dwarf_Unsigned i = index; i < loclist_expr_op_count;
+         /*increment in loop*/) {
+        Dwarf_Small op = 0;
+        Dwarf_Unsigned opd1 = 0;
+        Dwarf_Unsigned opd2 = 0;
+        Dwarf_Unsigned opd3 = 0;
+        Dwarf_Unsigned offsetforbranch = 0;
+
+        res = dwarf_get_location_op_value_c(locdesc_entry, i, &op, &opd1, &opd2,
+                                            &opd3, &offsetforbranch, error);
+        if (res != DW_DLV_OK) {
+            if (res == DW_DLV_NO_ENTRY) {
+                fprintf(stdout, "No entry\n");
+            } else {
+                fprintf(stdout, "Err: %s\n", dwarf_errmsg(*error));
+            }
+            return 1;
+        }
+
+        int16_t skip_bytes = 0;
+        res = parse_opcode(loc_expr, op, opd1, opd2, opd3, &skip_bytes, NULL);
+        switch (res) {
+        case NEXT_OP:
+            break;
+        case PARSE_PIECE:
+            return 1; // TODO: havent implemented;
+        default:
+            if (res < 0) {
+                break;
+            }
+            fprintf(stdout, "Err %i\n", res);
+            return 1;
+        }
+
+        if (skip_bytes == 0) {
+            i++;
+            continue;
+        } else if (skip_bytes > 0) {
+            Dwarf_Unsigned new_offset = offsetforbranch;
+            while (new_offset - (offsetforbranch + 2) < skip_bytes &&
+                   i + 1 < loclist_expr_op_count) {
+                i++;
+                res = dwarf_get_location_op_value_c(locdesc_entry, i, &op,
+                                                    &opd1, &opd2, &opd3,
+                                                    &new_offset, error);
+                if (res != DW_DLV_OK) {
+                    return 1;
+                }
+            }
+        } else {
+            Dwarf_Unsigned new_offset = offsetforbranch;
+            while (new_offset - (offsetforbranch + 2) > skip_bytes && i > 0) {
+                i--;
+                res = dwarf_get_location_op_value_c(locdesc_entry, i, &op,
+                                                    &opd1, &opd2, &opd3,
+                                                    &new_offset, error);
+                if (res != DW_DLV_OK) {
+                    return 1;
+                }
+            }
+        }
+    }
+
+    Value top;
+    res = pop_stack_top(loc_expr, &top);
+    if (res) {
+        fprintf(stdout, "Err ::%i\n", res);
+        return 1;
+    }
+
+    switch (res) {
+    case RESULT_REGISTER:
+        UWORD *p_reg = 0;
+        res = get_register(&loc_expr->loc_info.callee_regs_cur_value, top.u,
+                           &p_reg);
+        if (res) {
+            fprintf(stdout, "No reg!\n");
+            return 1;
+        }
+
+        *result = *p_reg;
+        return 0;
+
+    case NEXT_OP:
+    case RESULT_VALUE:
+    default:
+        *result = top.u;
+        return 0;
+    }
+}
+
+// =======================================
+
+// =======================================
+// Peek
+// =======================================
+
+int handle_peek(Debugger *dbg, Buffer *buffer) {
+    char *arg = next_token(buffer), *argEnd;
+    if (!arg) return 1;
+
+    UWORD addr = strtoll(arg, &argEnd, 16);
+    if (*argEnd) return INVALID_COMMAND;
+
+    int res;
+    UWORD data;
+    res = ptrace_peek_data(dbg, addr, &data);
+    if (res) return 1;
+
+    fprintf(stdout, "Data: %llx\n", data);
+    return 0;
+}
 
 // =======================================
 

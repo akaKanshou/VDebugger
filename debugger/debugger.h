@@ -15,6 +15,8 @@
 
 #include <libunwind-ptrace.h>
 
+#include "loc_expr.h"
+
 typedef enum Errors {
     KEY_NOT_EXISTS,
     INVALID_COMMAND,
@@ -225,7 +227,7 @@ int backtrace(Debugger *dbg);
 int get_preserved_registers(unw_cursor_t *cursor, unw_word_t *ip,
                             unw_word_t *sp);
 
-// int init_loc_info(Debugger *dbg, Loc_Info *loc_info);
+int init_loc_info(Debugger *dbg, Loc_Info *loc_info);
 
 // =======================================
 
@@ -236,6 +238,21 @@ int get_preserved_registers(unw_cursor_t *cursor, unw_word_t *ip,
 int handle_var(Debugger *dbg, Buffer *buffer);
 
 int handle_param_var(Debugger *dbg);
+
+int get_var_location(Debugger *dbg, Loc_Info loc_info, Dwarf_Die var_die,
+                     Dwarf_Half loc_attr, UWORD *var_addr, Dwarf_Error *error);
+
+int evaluate_expr(Loc_Expr *loc_expr, Dwarf_Unsigned loclist_expr_op_count,
+                  Dwarf_Locdesc_c locdesc_entry, Dwarf_Unsigned index,
+                  UWORD *result, Dwarf_Error *error);
+
+// =======================================
+
+// =======================================
+// Peek
+// =======================================
+
+int handle_peek(Debugger *dbg, Buffer *buffer);
 
 // =======================================
 

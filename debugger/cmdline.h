@@ -21,6 +21,7 @@ typedef enum COMMAND {
     NEXT,
     BACKTRACE,
     VAR,
+    PEEK_DATA,
 
     NUM_CMDS,
     INVALID_CMD,

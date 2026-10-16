@@ -141,6 +141,10 @@ COMMAND match_command(char *buffer) {
         return VAR;
     }
 
+    if (!strcmp(buffer, "peek")) {
+        return PEEK_DATA;
+    }
+
     return INVALID_CMD;
 }
 
