@@ -243,7 +243,11 @@ VAR_OPTIONS match_var_option(char *buffer) {
         return GET_VAR_ADDR_OPTION;
     }
 
-    if (!strcmp(buffer, "set&")) {
+    if (!strcmp(buffer, "get")) {
+        return GET_VAR_VALUE_OPTION;
+    }
+
+    if (!strcmp(buffer, "set")) {
         return SET_VAR_ADDR_OPTION;
     }
 

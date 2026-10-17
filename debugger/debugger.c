@@ -957,9 +957,10 @@ int handle_var(Debugger *dbg, Buffer *buffer) {
     default:
         return 1;
     case GET_VAR_ADDR_OPTION:
+    case GET_VAR_VALUE_OPTION:
         break;
 
-    case SET_VAR_ADDR_OPTION:
+    case SET_VAR_VALUE_OPTION:
         break;
     }
 
@@ -970,7 +971,7 @@ int handle_var(Debugger *dbg, Buffer *buffer) {
 
     switch (op) {
     case PARAM_VAR_OPTION:
-        return handle_param_var(dbg);
+        return handle_param_var(dbg, mode, 0);
 
     default:
         // is a variable name so do that stuff
@@ -981,7 +982,7 @@ int handle_var(Debugger *dbg, Buffer *buffer) {
     return 0;
 }
 
-int handle_param_var(Debugger *dbg) {
+int handle_param_var(Debugger *dbg, VAR_OPTIONS var_option, UWORD data) {
     int res;
 
     Loc_Info loc_info = {.c_pid = dbg->c_pid,
@@ -1018,10 +1019,8 @@ int handle_param_var(Debugger *dbg) {
         dwarf_dealloc_die(sub_prog_die);
         return 1;
     }
-    fprintf(
-        stdout,
-        "Printing formal parameter addresses of func: %s\nFrame base: %llx\n",
-        func_name, loc_info.frame_base);
+    fprintf(stdout, "Printing formal parameter addresses of func: %s\n",
+            func_name);
 
     int i = -1;
     char *fparam_name;
@@ -1049,7 +1048,26 @@ int handle_param_var(Debugger *dbg) {
             continue;
         }
 
-        fprintf(stdout, "Evaluated address: %llx\n", var_addr);
+        char var_val_s[256] = {};
+        switch (var_option) {
+        case GET_VAR_ADDR_OPTION:
+            fprintf(stdout, "Evaluated address: %llx\n", var_addr);
+            break;
+        case GET_VAR_VALUE_OPTION:
+            res = sprint_variable_die_val(dbg, fparam, var_addr, var_val_s,
+                                          &error);
+            if (res) {
+                fprintf(stdout, "Could not fetch the value of parameter %i\n",
+                        i);
+                continue;
+            }
+            fprintf(stdout, "Evaluated value: %s\n", var_val_s);
+            break;
+        default:
+            dwarf_dealloc_die(sub_prog_die);
+            if (fparam != NULL) dwarf_dealloc_die(fparam);
+            return 1;
+        }
     }
 
     dwarf_dealloc_die(sub_prog_die);
@@ -1132,16 +1150,12 @@ int get_var_location(Debugger *dbg, Loc_Info loc_info, Dwarf_Die var_die,
         }
     }
 
-    fprintf(stdout, "Got %s\n", "locdesc_entry");
-
     // Evaluating loc_expr
     res = evaluate_expr(&loc_expr, loclist_expr_op_count, locdesc_entry, 0,
                         var_addr, error);
     if (res) {
         return 1;
     }
-
-    fprintf(stdout, "Got %s\n", "result");
 
     dwarf_dealloc_attribute(location_attr);
     dwarf_dealloc_loc_head_c(loclist_head);
@@ -1242,6 +1256,136 @@ int evaluate_expr(Loc_Expr *loc_expr, Dwarf_Unsigned loclist_expr_op_count,
         *result = top.u;
         return 0;
     }
+}
+
+int sprint_variable_die_val(Debugger *dbg, Dwarf_Die var_die, UWORD var_addr,
+                            char print_output[], Dwarf_Error *error) {
+    int res;
+
+    Dwarf_Off type_offset;
+    Dwarf_Bool is_info;
+    Dwarf_Half type_tag;
+    Dwarf_Die type_die = 0, prev_die = var_die;
+
+    while (true) {
+        // get type offset of previous die
+        res = dwarf_dietype_offset(prev_die, &type_offset, &is_info, error);
+        if (prev_die != var_die) {
+            dwarf_dealloc_die(prev_die); // free previous die
+        }
+        if (res != DW_DLV_OK) return res;
+
+        // get type of previous die
+        res = dwarf_offdie_b(dbg->dwarf_dbg, type_offset, is_info, &type_die,
+                             error);
+        if (res != DW_DLV_OK) return res;
+
+        // get the tag of the type
+        res = dwarf_tag(type_die, &type_tag, error);
+        if (res != DW_DLV_OK) {
+            dwarf_dealloc_die(type_die);
+            return res;
+        }
+        prev_die = type_die;
+
+        switch (type_tag) {
+        default:
+            // Unimplemented or invalid
+            dwarf_dealloc_die(type_die);
+            return 1;
+
+        case DW_TAG_base_type: // Base case
+            return sprint_var_die_given_base(dbg, var_die, var_addr, type_die,
+                                             print_output, error);
+
+        case DW_TAG_structure_type:
+        case DW_TAG_array_type:
+        case DW_TAG_class_type:
+        case DW_TAG_union_type:
+            // Not implemented
+            // TODO: Recursive call here
+            dwarf_dealloc_die(type_die);
+            return 1;
+
+        case DW_TAG_atomic_type:
+        case DW_TAG_const_type:
+        case DW_TAG_immutable_type:
+        case DW_TAG_packed_type:
+        case DW_TAG_pointer_type:
+        case DW_TAG_reference_type:
+        case DW_TAG_restrict_type:
+        case DW_TAG_rvalue_reference_type:
+        case DW_TAG_shared_type:
+        case DW_TAG_volatile_type:
+        case DW_TAG_typedef:
+            // These do not affect the value in any way
+            continue;
+        }
+    }
+}
+
+int sprint_var_die_given_base(Debugger *dbg, Dwarf_Die var_die, UWORD var_addr,
+                              Dwarf_Die type_die, char print_output[],
+                              Dwarf_Error *error) {
+    int res;
+    Dwarf_Unsigned byte_size;
+    Dwarf_Attribute at_encoding;
+    Dwarf_Signed encoding;
+
+    _var_type data;
+    res = ptrace_peek_data(dbg, var_addr, &data._type_integral);
+    if (res) return res;
+
+    res = dwarf_attr(type_die, DW_AT_encoding, &at_encoding, error);
+    if (res) return res;
+
+    res = dwarf_formsdata(at_encoding, &encoding, error);
+    dwarf_dealloc_attribute(at_encoding);
+    if (res) return res;
+
+    res = dwarf_bytesize(type_die, &byte_size, error);
+    if (res == DW_DLV_ERROR) {
+        return 1;
+    } else if (res == DW_DLV_NO_ENTRY) {
+        byte_size = 8;
+    } else if (byte_size > 8) {
+        return 1; // TODO: implement
+    } else if (byte_size < 8) {
+        data._type_integral &= (1ll << (8 * byte_size)) - 1;
+    }
+
+    switch (encoding) {
+    case DW_ATE_boolean:
+        if (data._type_integral) {
+            sprintf(print_output, "true");
+        } else {
+            sprintf(print_output, "false");
+        }
+        break;
+
+    case DW_ATE_address:
+        sprintf(print_output, "%llx", data._type_integral);
+        break;
+
+    case DW_ATE_unsigned:
+    case DW_ATE_unsigned_char:
+        sprintf(print_output, "%llu", data._type_integral);
+        break;
+
+    case DW_ATE_signed:
+    case DW_ATE_signed_char:
+        sprintf(print_output, "%lli", data._type_integral);
+        break;
+
+    case DW_ATE_float:
+        sprintf(print_output, "%lf", data._type_floating);
+        break;
+
+    default:
+        return 1;
+    }
+
+    return 0;
 }
 
 // =======================================

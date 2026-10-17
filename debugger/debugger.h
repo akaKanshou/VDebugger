@@ -237,7 +237,7 @@ int init_loc_info(Debugger *dbg, Loc_Info *loc_info);
 
 int handle_var(Debugger *dbg, Buffer *buffer);
 
-int handle_param_var(Debugger *dbg);
+int handle_param_var(Debugger *dbg, VAR_OPTIONS var_option, UWORD data);
 
 int get_var_location(Debugger *dbg, Loc_Info loc_info, Dwarf_Die var_die,
                      Dwarf_Half loc_attr, UWORD *var_addr, Dwarf_Error *error);
@@ -245,6 +245,18 @@ int get_var_location(Debugger *dbg, Loc_Info loc_info, Dwarf_Die var_die,
 int evaluate_expr(Loc_Expr *loc_expr, Dwarf_Unsigned loclist_expr_op_count,
                   Dwarf_Locdesc_c locdesc_entry, Dwarf_Unsigned index,
                   UWORD *result, Dwarf_Error *error);
+
+typedef union _var_type {
+    UWORD _type_integral;
+    double _type_floating;
+} _var_type;
+
+int sprint_variable_die_val(Debugger *dbg, Dwarf_Die var_die, UWORD var_addr,
+                            char print_output[], Dwarf_Error *error);
+
+int sprint_var_die_given_base(Debugger *dbg, Dwarf_Die var_die, UWORD var_addr,
+                              Dwarf_Die type_die, char print_output[],
+                              Dwarf_Error *error);
 
 // =======================================
 
