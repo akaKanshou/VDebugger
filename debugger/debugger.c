@@ -308,6 +308,8 @@ int handle_breakpoint(Debugger *dbg, Buffer *buffer) {
         break;
     case DISABLE_BREAKPOINT:
         res = disable_breakpoint(dbg, breakpoint);
+        if (res) return 1;
+        res = delete_breakpoint(dbg, breakpoint);
         break;
     }
 
@@ -348,6 +350,11 @@ int get_breakpoint_at_addr(Debugger *dbg, WORD memAddr,
 
 int save_breakpoint(Debugger *dbg, Breakpoint *breakpoint) {
     hashmap_set(dbg->breakpoints, breakpoint);
+    return 0;
+}
+
+int delete_breakpoint(Debugger *dbg, Breakpoint *breakpoint) {
+    hashmap_delete(dbg->breakpoints, breakpoint);
     return 0;
 }
 
