@@ -751,12 +751,20 @@ int step_in(Debugger *dbg) {
 // TODO: consider fpo and use libunwind here
 int step_out(Debugger *dbg) {
     int res;
-    UWORD frame_pointer;
-    res = get_reg_value(dbg, rbp, &frame_pointer);
-    if (res) return res;
+
+    unw_cursor_t cursor;
+    unw_word_t frame_base;
+    if (unw_init_remote(&cursor, dbg->as, dbg->context) < 0) return 1;
+
+    res = unw_step(&cursor);
+    if (res < 0) return 1;
+    if (res == 0) return 0;
+
+    res = unw_get_reg(&cursor, UNW_REG_SP, &frame_base);
+    if (res) return 1;
 
     UWORD return_addr;
-    res = ptrace_peek_data(dbg, frame_pointer + 8, &return_addr);
+    res = ptrace_peek_data(dbg, frame_base - 8, &return_addr);
     if (res) return res;
 
     Breakpoint *breakpoint;
