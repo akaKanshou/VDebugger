@@ -119,4 +119,11 @@ int attach_cu_die(Line_Iterator *line_iterator, Dwarf_Die cu_die);
 int get_formal_params(Dwarf_Debug dwarf_dbg, Dwarf_Die sub_prog_die,
                       Dwarf_Die *fparam, Dwarf_Error *error);
 
+int get_data_members(Dwarf_Debug dwarf_dbg, Dwarf_Die struct_die,
+                     Dwarf_Die *fparam, Dwarf_Error *error);
+
+int get_local_var_from_name(Dwarf_Debug dwarf_dbg, Dwarf_Die block_die,
+                            char *var_name, Dwarf_Die *var_die, UWORD pc,
+                            Dwarf_Error *error);
+
 #endif

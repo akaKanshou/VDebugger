@@ -56,6 +56,12 @@ typedef struct Loc_Info {
 
     // address of the object2 currently being evaluated
     UWORD obj_addr;
+
+    // Initial stack entry
+    UWORD inital;
+
+    // Flag for if initial entry exists
+    char h_initial;
 } Loc_Info;
 
 typedef union Value {

@@ -526,3 +526,127 @@ int get_formal_params(Dwarf_Debug dwarf_dbg, Dwarf_Die sub_prog_die,
 
     return res;
 }
+
+int get_data_members(Dwarf_Debug dwarf_dbg, Dwarf_Die struct_die,
+                     Dwarf_Die *fparam, Dwarf_Error *error) {
+    int res = 0;
+
+    Dwarf_Half dw_tag;
+    Dwarf_Die next_die = 0;
+
+    if (*fparam == NULL) { // If: is first call
+        res = dwarf_child(struct_die, fparam, error);
+        if (res != DW_DLV_OK) {
+            // Error or DIE has no children
+            return res;
+        }
+    } else { // Else: is successive call. Move to next sibling
+        res = dwarf_siblingof_c(*fparam, &next_die, error);
+        dwarf_dealloc_die(*fparam);
+        *fparam = next_die;
+        if (res) {
+            return res;
+        }
+    }
+
+    while (true) { // Traverse siblings
+        res = dwarf_tag(*fparam, &dw_tag, error);
+        if (res != DW_DLV_OK) {
+            return res;
+        } else if (dw_tag == DW_TAG_member) { // Found a data member; return
+            return DW_DLV_OK;
+        }
+
+        res = dwarf_siblingof_c(*fparam, &next_die, error);
+        dwarf_dealloc_die(*fparam);
+        *fparam = next_die;
+        if (res) {
+            return res;
+        }
+    }
+
+    return res;
+}
+
+int get_local_var_from_name(Dwarf_Debug dwarf_dbg, Dwarf_Die block_die,
+                            char *var_name, Dwarf_Die *var_die, UWORD pc,
+                            Dwarf_Error *error) {
+    int res;
+    *var_die = 0;
+
+    Dwarf_Half block_tag;
+    res = dwarf_tag(block_die, &block_tag, error);
+    if (res != DW_DLV_OK) {
+        return res;
+    }
+
+    switch (block_tag) {
+    default:
+        return 0;
+
+    case DW_TAG_variable:
+    case DW_TAG_formal_parameter:
+        char *die_name;
+        res = dwarf_diename(block_die, &die_name, error);
+        if (res == DW_DLV_ERROR) {
+            return res;
+        } else if (strcmp(var_name, die_name) == 0) {
+            *var_die = block_die;
+        }
+        return 0;
+
+    case DW_TAG_lexical_block:
+    case DW_TAG_subprogram:
+    case DW_TAG_inlined_subroutine:
+        break;
+    }
+
+    Dwarf_Addr b_low, b_high;
+    res =
+        get_low_high_pc_from_die(dwarf_dbg, block_die, &b_low, &b_high, error);
+    if (res != DW_DLV_OK) {
+        return res;
+    } else if (b_low > pc || b_high < pc) {
+        return 0;
+    }
+
+    Dwarf_Die child_die;
+    res = dwarf_child(block_die, &child_die, error);
+    if (res == DW_DLV_ERROR) {
+        return 1;
+    } else if (res == DW_DLV_NO_ENTRY) {
+        return 0;
+    }
+
+    res = get_local_var_from_name(dwarf_dbg, child_die, var_name, var_die, pc,
+                                  error);
+    if (res != DW_DLV_OK) {
+        dwarf_dealloc_die(child_die);
+        return res;
+    } else if (*var_die) {
+        dwarf_dealloc_die(child_die);
+        return 0;
+    }
+
+    Dwarf_Die next_die;
+    while ((res = dwarf_siblingof_c(child_die, &next_die, error)) ==
+           DW_DLV_OK) {
+        res = get_local_var_from_name(dwarf_dbg, next_die, var_name, var_die,
+                                      pc, error);
+
+        dwarf_dealloc_die(child_die);
+        child_die = next_die;
+
+        if (res != DW_DLV_OK) {
+            break;
+        } else if (*var_die) {
+            break;
+        }
+    }
+
+    if (child_die != *var_die) {
+        dwarf_dealloc_die(child_die);
+    }
+    if (res == DW_DLV_ERROR) return 1;
+    return 0;
+}

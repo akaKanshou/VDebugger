@@ -260,6 +260,14 @@ int sprint_var_die_given_base(Debugger *dbg, Dwarf_Die var_die, UWORD var_addr,
                               Dwarf_Die type_die, char print_output[],
                               Dwarf_Error *error);
 
+int sprint_var_die_given_struct_type(Debugger *dbg, Dwarf_Die var_die,
+                                     UWORD var_addr, Dwarf_Die struct_type_die,
+                                     char print_output[],
+                                     int pretty_print_level,
+                                     Dwarf_Error *error);
+
+int handle_get_local_var(Debugger *dbg, VAR_OPTIONS var_option, char *var_name);
+
 // =======================================
 
 // =======================================

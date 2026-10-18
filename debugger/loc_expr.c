@@ -347,7 +347,9 @@ int parse_opcode(Loc_Expr *loc_expr, int op, UWORD op1, UWORD op2, UWORD op3,
 }
 
 int parse_op_addr(Loc_Expr *loc_expr, UWORD op1) {
-    return push_expr_tkn(loc_expr, (Value){.u = op1});
+    return push_expr_tkn(
+        loc_expr,
+        (Value){.u = op1 + loc_expr->loc_info.load_address}); // is correct?
 }
 
 int parse_op_deref(Loc_Expr *loc_expr, UWORD size) {

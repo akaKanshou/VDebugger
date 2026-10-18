@@ -966,7 +966,7 @@ int handle_var(Debugger *dbg, Buffer *buffer) {
     char *arg = next_token(buffer);
     if (!arg) return 1;
 
-    WHERE_OPTIONS mode = match_var_option(arg);
+    VAR_OPTIONS mode = match_var_option(arg);
 
     switch (mode) {
     default:
@@ -976,17 +976,21 @@ int handle_var(Debugger *dbg, Buffer *buffer) {
         break;
 
     case SET_VAR_VALUE_OPTION:
-        break;
+        return 1; // TODO: implement
     }
 
     arg = next_token(buffer);
     if (!arg) return 1;
 
-    WHERE_OPTIONS op = match_var_option(arg);
+    VAR_OPTIONS op = match_var_option(arg);
 
     switch (op) {
     case PARAM_VAR_OPTION:
         return handle_param_var(dbg, mode, 0);
+
+    case LOCAL_VAR_OPTION:
+        arg = next_token(buffer);
+        return handle_get_local_var(dbg, mode, arg);
 
     default:
         // is a variable name so do that stuff
@@ -1002,7 +1006,8 @@ int handle_param_var(Debugger *dbg, VAR_OPTIONS var_option, UWORD data) {
 
     Loc_Info loc_info = {.c_pid = dbg->c_pid,
                          .load_address = dbg->load_address,
-                         .frame_base = 0};
+                         .frame_base = 0,
+                         .h_initial = 0};
     res = init_loc_info(dbg, &loc_info);
     if (res) return res;
 
@@ -1016,17 +1021,13 @@ int handle_param_var(Debugger *dbg, VAR_OPTIONS var_option, UWORD data) {
         /*loc_info.callee_regs_cur_value.rip*/ pc - dbg->load_address,
         dbg->dwarf_dbg, &sub_prog_die, &error);
     if (res == DW_DLV_ERROR) {
-        dwarf_dealloc_die(sub_prog_die);
         dwarf_dealloc_error(dbg->dwarf_dbg, error);
         return 1;
     }
 
     res = get_var_location(dbg, loc_info, sub_prog_die, DW_AT_frame_base,
                            &loc_info.frame_base, &error);
-    if (res) {
-        fprintf(stdout, "Err =%i\n", res);
-        return res;
-    }
+    if (res) return res;
 
     char *func_name;
     res = dwarf_diename(sub_prog_die, &func_name, &error);
@@ -1114,6 +1115,9 @@ int get_var_location(Debugger *dbg, Loc_Info loc_info, Dwarf_Die var_die,
                      Dwarf_Half loc_attr, UWORD *var_addr, Dwarf_Error *error) {
     int res;
     Loc_Expr loc_expr = {.loc_info = loc_info};
+    if (loc_info.h_initial) {
+        push_expr_tkn(&loc_expr, (Value){.u = loc_info.h_initial});
+    }
 
     Dwarf_Attribute location_attr = 0;
     res = dwarf_attr(var_die, loc_attr, &location_attr, error);
@@ -1314,6 +1318,9 @@ int sprint_variable_die_val(Debugger *dbg, Dwarf_Die var_die, UWORD var_addr,
                                              print_output, error);
 
         case DW_TAG_structure_type:
+            return sprint_var_die_given_struct_type(
+                dbg, var_die, var_addr, type_die, print_output, 0, error);
+
         case DW_TAG_array_type:
         case DW_TAG_class_type:
         case DW_TAG_union_type:
@@ -1400,6 +1407,175 @@ int sprint_var_die_given_base(Debugger *dbg, Dwarf_Die var_die, UWORD var_addr,
         return 1;
     }
 
+    return 0;
+}
+
+int sprint_var_die_given_struct_type(Debugger *dbg, Dwarf_Die var_die,
+                                     UWORD var_addr, Dwarf_Die struct_type_die,
+                                     char print_output[],
+                                     int pretty_print_level,
+                                     Dwarf_Error *error) {
+    int res, cur_offset = 0, i = -1;
+    char *member_val, *member_name;
+    Dwarf_Die member_die = NULL;
+
+    Loc_Info loc_info = {.c_pid = dbg->c_pid,
+                         .load_address = dbg->load_address,
+                         .frame_base = 0,
+                         .h_initial = 1,
+                         .inital = var_addr};
+    res = init_loc_info(dbg, &loc_info);
+    if (res) return res;
+
+    cur_offset += sprintf(print_output + cur_offset, "{");
+    while ((res = get_data_members(dbg->dwarf_dbg, struct_type_die, &member_die,
+                                   error)) == DW_DLV_OK) {
+        i++;
+        if (i > 0) {
+            cur_offset += sprintf(print_output + cur_offset, ", ");
+        }
+
+        res = dwarf_diename(member_die, &member_name, error);
+        if (res == DW_DLV_ERROR) {
+            dwarf_dealloc_die(member_die);
+            return 1;
+        } else if (res == DW_DLV_NO_ENTRY) {
+            cur_offset += sprintf(print_output + cur_offset, "[%i]--: ", i);
+        } else {
+            cur_offset +=
+                sprintf(print_output + cur_offset, "[%i]%s: ", i, member_name);
+        }
+
+        UWORD member_addr;
+        Dwarf_Attribute data_member_location;
+        dwarf_attr(member_die, DW_AT_data_member_location,
+                   &data_member_location, error);
+        if (res == DW_DLV_ERROR) {
+            return res;
+        } else if (res == DW_DLV_NO_ENTRY) {
+            member_addr = var_addr;
+        } else {
+            Dwarf_Half form;
+            res = dwarf_whatform(data_member_location, &form, error);
+            if (res) {
+                dwarf_dealloc_attribute(data_member_location);
+                return res;
+            }
+
+            switch (form) {
+
+            // integer constant forms
+            case DW_FORM_data1:
+            case DW_FORM_data2:
+            case DW_FORM_data4:
+            case DW_FORM_data8:
+            case DW_FORM_sdata:
+            case DW_FORM_udata:
+                res = dwarf_formsdata(data_member_location, &member_addr,
+                                      error); // get offset
+                if (res) {
+                    dwarf_dealloc_attribute(data_member_location);
+                    return res;
+                }
+                member_addr += var_addr; // add to base
+                break;
+
+            // location expression forms
+            case DW_FORM_exprloc:
+            case DW_FORM_loclistx:
+            case DW_FORM_sec_offset:
+                get_var_location(dbg, loc_info, member_die, DW_AT_data_location,
+                                 &member_addr, error);
+                break;
+
+            case DW_FORM_data16: // How to interpret? Will it be encountered?
+            default:             // Invalid
+                dwarf_dealloc_attribute(data_member_location);
+                return res;
+            }
+        }
+
+        res = sprint_variable_die_val(dbg, member_die, member_addr,
+                                      print_output + cur_offset, error);
+        if (res) return res;
+        cur_offset += strlen(print_output + cur_offset);
+    }
+    cur_offset += sprintf(print_output + cur_offset, "}");
+
+    dwarf_dealloc_die(member_die);
+    return 0;
+}
+
+int handle_get_local_var(Debugger *dbg, VAR_OPTIONS mode, char *var_name) {
+    int res;
+
+    Loc_Info loc_info = {.c_pid = dbg->c_pid,
+                         .load_address = dbg->load_address,
+                         .frame_base = 0,
+                         .h_initial = 0};
+    res = init_loc_info(dbg, &loc_info);
+    if (res) return res;
+
+    UWORD pc;
+    res = get_reg_value(dbg, rip, &pc);
+    if (res) return res;
+
+    Dwarf_Die sub_prog_die;
+    Dwarf_Error error;
+    res = get_sub_prog_die_from_addr(pc - dbg->load_address, dbg->dwarf_dbg,
+                                     &sub_prog_die, &error);
+    if (res == DW_DLV_ERROR) {
+        dwarf_dealloc_error(dbg->dwarf_dbg, error);
+        return 1;
+    }
+
+    res = get_var_location(dbg, loc_info, sub_prog_die, DW_AT_frame_base,
+                           &loc_info.frame_base, &error);
+    if (res) return res;
+
+    Dwarf_Die var_die = NULL;
+    res = get_local_var_from_name(dbg->dwarf_dbg, sub_prog_die, var_name,
+                                  &var_die, pc - dbg->load_address, &error);
+    dwarf_dealloc_die(sub_prog_die);
+    if (res != DW_DLV_OK) {
+        return res;
+    }
+
+    Dwarf_Attribute at_decl_line;
+    Dwarf_Signed decl_line;
+    res = dwarf_attr(var_die, DW_AT_decl_line, &at_decl_line, &error);
+    if (res == DW_DLV_ERROR) {
+        dwarf_dealloc_die(var_die);
+        return res;
+    } else if (res == DW_DLV_NO_ENTRY) {
+        decl_line = 0;
+    } else {
+        res = dwarf_formsdata(at_decl_line, &decl_line, &error);
+        dwarf_dealloc_attribute(at_decl_line);
+        if (res) {
+            dwarf_dealloc_die(var_die);
+            return res;
+        }
+    }
+
+    UWORD var_addr;
+    res = get_var_location(dbg, loc_info, var_die, DW_AT_location, &var_addr,
+                           &error);
+    if (res) {
+        dwarf_dealloc_die(var_die);
+        return res;
+    }
+
+    char var_val_s[256] = {};
+    res = sprint_variable_die_val(dbg, var_die, var_addr, var_val_s, &error);
+    if (res) {
+        dwarf_dealloc_die(var_die);
+        return res;
+    }
+
+    fprintf(stdout, "%s (declared at line %lli): %s\n", var_name, decl_line,
+            var_val_s);
+    if (var_die != NULL) dwarf_dealloc_die(var_die);
     return 0;
 }
 

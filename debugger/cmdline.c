@@ -255,6 +255,10 @@ VAR_OPTIONS match_var_option(char *buffer) {
         return PARAM_VAR_OPTION;
     }
 
+    if (!strcmp(buffer, "local")) {
+        return LOCAL_VAR_OPTION;
+    }
+
     return INVALID_VAR_OPTION;
 }
 
