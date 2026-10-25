@@ -1,11 +1,11 @@
 # VDebugger
 
-A debugger for x86- 64 linux, written entirely in C.
+A debugger for x86-64 linux, written entirely in C.
 
 ## Features
 
 - Stack unwinding, even with frame pointer omission
-- Step- in, Step- out, Step- over
+- Step-in, Step-out, Step-over
 - Set breakpoints on address as well source lines
 - Read variables from debugee
 - DWARF locexpr evaluator in locexpr.c
@@ -40,16 +40,16 @@ Debugee terminated
 Build the debugger with CMake
 
 ```bash
-  git clone - - recurse- submodules https://github.com/akaKanshou/VDebugger.git
+  git clone --recurse-submodules https://github.com/akaKanshou/VDebugger.git
   cd VDebugger/
-  cmake - S . - B build/
-  cmake - - build build/
+  cmake -S . -B build/
+  cmake --build build/
 ```
 
-Depends on libdwarf and libunwind to compile. On Arch- based platforms, install using the following commands
+Depends on libdwarf and libunwind to compile. On Arch-based platforms, install using the following commands
 
 ```bash
-  pacman - S libdwarf libunwind
+  pacman -S libdwarf libunwind
 ```
 
 ## Commands
@@ -174,7 +174,3 @@ Following is the complete set of commands currently
   ```
   backtrace
   ```
-
-## License
-
-[MIT](https://choosealicense.com/licenses/mit/)
