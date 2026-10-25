@@ -11,7 +11,7 @@
 
 int main(int argc, char *argv[]) {
     if (argc < 2) {
-        printf("Usage: VDB [filename/program]\n");
+        printf("Usage: VDB <program> <cmdline_arguments_to_program>\n");
         return 0;
     }
 
@@ -28,7 +28,9 @@ int main(int argc, char *argv[]) {
 
         ptrace(PT_TRACE_ME, NULL, NULL, NULL);
         personality(ADDR_NO_RANDOMIZE);
-        execl(program, program, NULL);
+        execvp(argv[1], &argv[1]);
+        fprintf(stdout, "Execl Error :%i\n", errno);
+        return 1;
     }
 
     // parent process
